@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/ingestion-config.json",
+  "title": "Design Intelligence ingestion configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "archive_formats",
+    "limits",
+    "allowed_extensions",
+    "text_extensions",
+    "blocked_filenames",
+    "secret_scan",
+    "execution_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "archive_formats": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^\\.[a-z0-9]+$"}
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_files",
+        "max_total_uncompressed_bytes",
+        "max_file_bytes",
+        "max_compression_ratio",
+        "max_path_depth"
+      ],
+      "properties": {
+        "max_files": {"type": "integer", "minimum": 1},
+        "max_total_uncompressed_bytes": {"type": "integer", "minimum": 1},
+        "max_file_bytes": {"type": "integer", "minimum": 1},
+        "max_compression_ratio": {"type": "number", "minimum": 1},
+        "max_path_depth": {"type": "integer", "minimum": 1}
+      }
+    },
+    "allowed_extensions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^\\.[a-z0-9]+$"}
+    },
+    "text_extensions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^\\.[a-z0-9]+$"}
+    },
+    "blocked_filenames": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "secret_scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fail_closed", "max_text_scan_bytes"],
+      "properties": {
+        "fail_closed": {"type": "boolean"},
+        "max_text_scan_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "execution_policy": {"const": "never-execute-archive-content"}
+  }
+}

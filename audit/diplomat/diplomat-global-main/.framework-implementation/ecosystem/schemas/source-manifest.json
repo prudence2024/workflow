@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/source-manifest.json",
+  "title": "Curated design source manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_id",
+    "capture_id",
+    "source",
+    "captured_at",
+    "archive_hash",
+    "inventory",
+    "permitted_use",
+    "redaction_status",
+    "independence_group"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source_id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "capture_id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "source": {"type": "string", "minLength": 1},
+    "captured_at": {"type": "string", "format": "date-time"},
+    "archive_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "bytes", "types"],
+      "properties": {
+        "files": {"type": "integer", "minimum": 0},
+        "bytes": {"type": "integer", "minimum": 0},
+        "types": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "permitted_use": {"type": "string", "minLength": 1},
+    "redaction_status": {"enum": ["not_reviewed", "clear", "redacted", "quarantined"]},
+    "independence_group": {"type": "string", "minLength": 1},
+    "source_quality": {"type": "number", "minimum": 0, "maximum": 1},
+    "ingestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "policy_version", "raw_path", "executed_content"],
+      "properties": {
+        "status": {"enum": ["accepted", "quarantined"]},
+        "policy_version": {"const": 1},
+        "raw_path": {"type": "string", "pattern": "^design-intelligence/references/raw/"},
+        "executed_content": {"const": false}
+      }
+    },
+    "security_scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path_traversal",
+        "symlinks",
+        "encrypted_entries",
+        "limit_violations",
+        "blocked_files",
+        "secret_indicators",
+        "personal_data_indicators",
+        "embedded_instruction_indicators"
+      ],
+      "properties": {
+        "path_traversal": {"type": "integer", "minimum": 0},
+        "symlinks": {"type": "integer", "minimum": 0},
+        "encrypted_entries": {"type": "integer", "minimum": 0},
+        "limit_violations": {"type": "integer", "minimum": 0},
+        "blocked_files": {"type": "array", "items": {"type": "string"}},
+        "secret_indicators": {"type": "array", "items": {"type": "string"}},
+        "personal_data_indicators": {"type": "array", "items": {"type": "string"}},
+        "embedded_instruction_indicators": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original_archive", "ingested_at", "ingested_by", "content_origin"],
+      "properties": {
+        "original_archive": {"type": "string", "minLength": 1},
+        "ingested_at": {"type": "string", "format": "date-time"},
+        "ingested_by": {"type": "string", "minLength": 1},
+        "content_origin": {"enum": ["owner-supplied", "approved-external-reference"]}
+      }
+    }
+  }
+}

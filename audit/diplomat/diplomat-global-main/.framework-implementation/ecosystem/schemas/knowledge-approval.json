@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/knowledge-approval.json",
+  "title": "Human knowledge classification approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reviewer", "reviewed_at", "approved_established_patterns"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "reviewer": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "approved_established_patterns": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}
+    }
+  }
+}

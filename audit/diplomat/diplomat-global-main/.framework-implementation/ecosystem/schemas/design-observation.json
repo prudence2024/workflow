@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/design-observation.json",
+  "title": "Design Intelligence observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "source_id",
+    "capture_id",
+    "independence_group",
+    "pattern_key",
+    "domain",
+    "name",
+    "summary",
+    "problem",
+    "mechanism",
+    "evidence_kind",
+    "evidence_references",
+    "industries",
+    "ux_goals",
+    "contexts",
+    "tags",
+    "accessibility",
+    "performance",
+    "usability",
+    "outcome_evidence",
+    "novelty",
+    "weights",
+    "extracted_at",
+    "extractor_version",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "source_id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "capture_id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "independence_group": {"type": "string", "minLength": 1},
+    "pattern_key": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "domain": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "name": {"type": "string", "minLength": 1},
+    "summary": {"type": "string", "minLength": 1},
+    "problem": {"type": "string", "minLength": 1},
+    "mechanism": {"type": "string", "minLength": 1},
+    "evidence_kind": {"enum": ["positive", "negative", "contradictory"]},
+    "evidence_references": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "industries": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "ux_goals": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "contexts": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "accessibility": {"enum": ["supports", "neutral", "risk", "unknown"]},
+    "performance": {"enum": ["supports", "neutral", "risk", "unknown"]},
+    "usability": {"type": "number", "minimum": 0, "maximum": 1},
+    "outcome_evidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "novelty": {"type": "number", "minimum": 0, "maximum": 1},
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_quality",
+        "extraction_confidence",
+        "independence_weight",
+        "freshness",
+        "contextual_relevance"
+      ],
+      "properties": {
+        "source_quality": {"type": "number", "minimum": 0, "maximum": 1},
+        "extraction_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "independence_weight": {"type": "number", "minimum": 0, "maximum": 1},
+        "freshness": {"type": "number", "minimum": 0, "maximum": 1},
+        "contextual_relevance": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "extracted_at": {"type": "string", "format": "date-time"},
+    "extractor_version": {"type": "string", "minLength": 1},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "archive_hash", "static_analysis_only", "copied_source_code"],
+      "properties": {
+        "manifest": {"type": "string", "pattern": "^design-intelligence/manifests/"},
+        "archive_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "static_analysis_only": {"const": true},
+        "copied_source_code": {"const": false}
+      }
+    }
+  }
+}

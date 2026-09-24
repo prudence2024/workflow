@@ -1,0 +1,27 @@
+node_modules/
+.next/
+out/
+build/
+coverage/
+
+# Secrets — never commit real credentials
+.env
+.env.local
+.env.*.local
+.env.vercel
+*.pem
+*.key
+
+# Local upload stand-in (replaced by R2 in production)
+storage/
+
+# Tooling / OS
+.vercel
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tsbuildinfo
+next-env.d.ts
+
+# Local Neon CLI context
+.neon/

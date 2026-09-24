@@ -1,0 +1,398 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-ink: var(--ink);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-inverse: var(--inverse);
+  --color-inverse-foreground: var(--inverse-foreground);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.08);
+  --shadow-glow: 0 20px 60px -20px color-mix(in oklab, var(--brand) 40%, transparent);
+}
+
+:root {
+  --radius: 0.75rem;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand: cyan from the Diplomat Global logo */
+  --brand: oklch(0.5 0.13 220);
+  --brand-foreground: oklch(0.15 0.02 240);
+
+  --ink: oklch(0.15 0.01 240);
+  --canvas: oklch(0.985 0.003 240);
+  --surface: oklch(0.97 0.005 230);
+
+  /* Always-dark bands (announcement bar, footer, buttons, badges). Do not flip in dark mode. */
+  --inverse: oklch(0.15 0.01 240);
+  --inverse-foreground: oklch(0.985 0.003 240);
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.15 0.01 240);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 240);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 240);
+  --primary: oklch(0.15 0.01 240);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.97 0.005 230);
+  --secondary-foreground: oklch(0.15 0.01 240);
+  --muted: oklch(0.97 0.005 230);
+  --muted-foreground: oklch(0.5 0.01 240);
+  --accent: oklch(0.72 0.14 220);
+  --accent-foreground: oklch(0.15 0.01 240);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.92 0.005 240);
+  --input: oklch(0.92 0.005 240);
+  --ring: oklch(0.72 0.14 220);
+}
+
+.dark {
+  /* Dark-mode brand text tone: bright cyan keeps ≥4.5:1 on dark canvas/surface
+     (the light-mode --brand above would fall to ~3.5:1 on dark backgrounds). */
+  --brand: oklch(0.78 0.12 220);
+  --background: oklch(0.13 0.01 240);
+  --foreground: oklch(0.98 0.003 240);
+  --card: oklch(0.18 0.01 240);
+  --card-foreground: oklch(0.98 0.003 240);
+  --popover: oklch(0.18 0.01 240);
+  --popover-foreground: oklch(0.98 0.003 240);
+  --primary: oklch(0.98 0.003 240);
+  --primary-foreground: oklch(0.15 0.01 240);
+  --secondary: oklch(0.22 0.01 240);
+  --secondary-foreground: oklch(0.98 0.003 240);
+  --muted: oklch(0.22 0.01 240);
+  --muted-foreground: oklch(0.65 0.01 240);
+  /* Accent stays the bright cyan for fills/rings in dark mode; --brand (light
+     section above) is the WCAG-AA text tone. */
+  --accent: oklch(0.72 0.14 220);
+  --accent-foreground: oklch(0.15 0.01 240);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.72 0.14 220);
+  --canvas: oklch(0.13 0.01 240);
+  --surface: oklch(0.18 0.01 240);
+  --ink: oklch(0.98 0.003 240);
+
+  /* Inverse bands stay dark in dark mode — do NOT flip. */
+  --inverse: oklch(0.15 0.01 240);
+  --inverse-foreground: oklch(0.985 0.003 240);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    color-scheme: light;
+    background: var(--canvas);
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--brand) 38%, transparent);
+    color: var(--ink);
+  }
+
+  button,
+  a,
+  input,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Slim, on-brand scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--ink) 25%, transparent) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    background-color: color-mix(in oklab, var(--ink) 28%, transparent);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--ink) 45%, transparent);
+  }
+}
+
+/* ---- Motion system ---- */
+
+@keyframes sheen {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  55%,
+  100% {
+    transform: translateX(220%) skewX(-18deg);
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes hero-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 32s linear infinite;
+  will-change: transform;
+}
+
+.marquee-pause:hover .animate-marquee {
+  animation-play-state: paused;
+}
+
+.animate-sheen {
+  animation: sheen 4.5s ease-in-out infinite;
+}
+
+.animate-pop-in {
+  animation: pop-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-float-y {
+  animation: float-y 5s ease-in-out infinite;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scroll-triggered reveal (paired with <Reveal>) */
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .animate-marquee {
+    animation: none;
+  }
+}
+
+/* Immediate tactile press feedback — transform/opacity only, so no layout
+   animation. Reduced-motion users are covered by the global override below. */
+.pressable {
+  transition: transform 120ms ease, opacity 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pressable:active:not(:disabled) {
+  transform: scale(0.98);
+  opacity: 0.92;
+}
+
+/* Gradient hairline used under section headings */
+.section-rule {
+  height: 3px;
+  width: 44px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand), color-mix(in oklab, var(--brand) 30%, transparent));
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 500ms ease-out both;
+}
+
+/* Allow full-width horizontal measurement without hiding overflow */
+html, body {
+  max-width: 100%;
+}
+
+/* Allow isolated horizontal scroll in specific containers */
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tables get isolated horizontal scroll */
+.table-scroll-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   International Phone Input — visual alignment with the design
+   system (react-phone-number-input). The country dropdown arrow
+   and select follow the app's border/brand tokens; the country
+   select options panel inherits native styling.
+   ============================================================ */
+.PhoneInput {
+  --PhoneInputCountrySelectArrow-color: var(--color-muted-foreground, #6b7280);
+  --PhoneInputCountrySelectArrow-color--focus: var(--color-brand, #0ea5e9);
+  --PhoneInputCountryFlag-borderColor: var(--color-border, #e5e7eb);
+}
+
+.PhoneInput .PhoneInputCountry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  padding-inline-end: 0.25rem;
+  border-radius: 0.75rem;
+}
+
+.PhoneInput .PhoneInputCountrySelect {
+  cursor: pointer;
+}
+
+.PhoneInput .PhoneInputCountrySelect:focus-visible {
+  outline: 2px solid var(--color-brand, #0ea5e9);
+  outline-offset: 2px;
+}
+
+.PhoneInput .PhoneInputCountrySelectArrow {
+  transition: transform 0.15s ease;
+}
+
+.PhoneInput .PhoneInputCountrySelect:focus-visible + .PhoneInputCountrySelectArrow {
+  transform: rotate(225deg);
+}
+
+.PhoneInput--locked .PhoneInputCountry {
+  pointer-events: none;
+  opacity: 0.75;
+}

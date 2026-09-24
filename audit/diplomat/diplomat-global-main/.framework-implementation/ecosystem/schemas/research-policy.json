@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/research-policy.json",
+  "title": "Skill Learning source and mutation policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "allowed_source_types", "authority_weights", "rules", "output_roots"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "allowed_source_types": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["official-documentation", "specification", "public-repository", "established-standard", "community-reference"]}
+    },
+    "authority_weights": {
+      "type": "object", "additionalProperties": false,
+      "required": ["primary", "secondary", "community"],
+      "properties": {
+        "primary": {"type": "number", "minimum": 0, "maximum": 1},
+        "secondary": {"type": "number", "minimum": 0, "maximum": 1},
+        "community": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "rules": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "approved_sources_only", "primary_sources_preferred",
+        "community_requires_corroboration", "deduplicate_shared_upstreams",
+        "paraphrased_claims_only", "execute_retrieved_code",
+        "recommendation_only", "skill_mutation_allowed", "system_mutation_allowed"
+      ],
+      "properties": {
+        "approved_sources_only": {"const": true},
+        "primary_sources_preferred": {"const": true},
+        "community_requires_corroboration": {"const": true},
+        "deduplicate_shared_upstreams": {"const": true},
+        "paraphrased_claims_only": {"const": true},
+        "execute_retrieved_code": {"const": false},
+        "recommendation_only": {"const": true},
+        "skill_mutation_allowed": {"const": false},
+        "system_mutation_allowed": {"const": false}
+      }
+    },
+    "output_roots": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^research/(recommendations|reports|decisions)$"}
+    }
+  }
+}

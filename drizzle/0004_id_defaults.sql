@@ -1,0 +1,27 @@
+ALTER TABLE "activity_events" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "audit_logs" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "campaign_records" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "campaigns" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "contact_channel_consents" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "contacts" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "custom_field_definitions" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "files" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "import_errors" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "imports" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "message_events" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "message_templates" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "messages" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "notes" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "organization_invitations" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "organization_members" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "organizations" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "outbox_events" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "permissions" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "platform_admins" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "roles" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "subscriptions" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "suppression_entries" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "tags" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "usage_counters" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();--> statement-breakpoint
+ALTER TABLE "webhook_events" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();

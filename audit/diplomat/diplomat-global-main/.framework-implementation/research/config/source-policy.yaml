@@ -1,0 +1,25 @@
+schema_version: 1
+allowed_source_types:
+  - official-documentation
+  - specification
+  - public-repository
+  - established-standard
+  - community-reference
+authority_weights:
+  primary: 0.95
+  secondary: 0.70
+  community: 0.45
+rules:
+  approved_sources_only: true
+  primary_sources_preferred: true
+  community_requires_corroboration: true
+  deduplicate_shared_upstreams: true
+  paraphrased_claims_only: true
+  execute_retrieved_code: false
+  recommendation_only: true
+  skill_mutation_allowed: false
+  system_mutation_allowed: false
+output_roots:
+  - research/recommendations
+  - research/reports
+  - research/decisions

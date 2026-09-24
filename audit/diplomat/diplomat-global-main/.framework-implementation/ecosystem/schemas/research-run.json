@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/research-run.json",
+  "title": "Skill Learning comparison run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "id", "generated_at", "generator_version",
+    "protected_revision_before", "protected_revision_after",
+    "protected_content_unchanged", "approved_sources", "skills_compared",
+    "aligned_capabilities", "gaps", "conflicts", "recommendation_ids",
+    "writes", "warnings", "approval_required"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "generator_version": {"const": "skill-learning-v1"},
+    "protected_revision_before": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "protected_revision_after": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "protected_content_unchanged": {"const": true},
+    "approved_sources": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "skills_compared": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "aligned_capabilities": {"type": "array", "items": {"type": "string"}},
+    "gaps": {"type": "array", "items": {"type": "string"}},
+    "conflicts": {"type": "array", "items": {"type": "string"}},
+    "recommendation_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "writes": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^research/(recommendations|reports)/"}
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "approval_required": {"const": true}
+  }
+}

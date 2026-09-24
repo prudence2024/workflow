@@ -1,0 +1,35 @@
+# Diplomat Global Tech-Solutions — AI Guidelines
+> Premium electronics e-commerce store in Ikeja, Lagos, Nigeria. Sells monitors, cameras, computing gear, and printers with secure Paystack payment and nationwide delivery.
+
+## About
+Diplomat Global Tech-Solutions (BN 3049329) is a Nigerian electronics retailer based in Computer Village, Ikeja, Lagos. We sell new and certified pre-owned monitors, cameras, laptops, desktops, printers, and accessories. Orders are processed securely via Paystack and delivered nationwide.
+
+## Key Pages
+- [Home](https://diplomatglobal.com.ng/) — Homepage with featured products and promotions
+- [Shop](https://diplomatglobal.com.ng/shop) — Full product catalog with category and price filters
+- [About Us](https://diplomatglobal.com.ng/about) — Company information and location
+- [Contact](https://diplomatglobal.com.ng/contact) — Contact form and business address
+- [Blog](https://diplomatglobal.com.ng/blog) — Tech articles and product guides
+- [Reviews](https://diplomatglobal.com.ng/reviews) — Customer testimonials
+- [FAQ](https://diplomatglobal.com.ng/faq) — Answers about delivery, payment, returns and support
+- [Warranty & Returns](https://diplomatglobal.com.ng/warranty) — Warranty and returns policy
+- [Privacy Policy](https://diplomatglobal.com.ng/privacy-policy) — Data protection and privacy practices
+- [Terms & Conditions](https://diplomatglobal.com.ng/terms-and-conditions) — Terms of service
+
+## Key Facts
+- Business name: Diplomat Global Tech-Solutions
+- Business registration: BN 3049329
+- Location: 14 Francis Oremeji Street, Distinct Plaza Suite 5, Opp. UBA PLC, Computer Village, Ikeja, Lagos
+- Payment: Secure Paystack checkout (card, bank transfer, USSD)
+- Delivery: Nationwide delivery across Nigeria
+- Products: Electronics — monitors, cameras, computers, printers, accessories
+- Currency: Nigerian Naira (₦)
+
+## Contact
+- [Website](https://diplomatglobal.com.ng/contact)
+- Email: support@diplomatglobal.com.ng
+
+## Crawl Policy
+- Public product, blog, and informational pages are open for indexing
+- Admin dashboard, API endpoints, checkout internals, and customer account pages are not for indexing
+- See robots.txt for detailed access rules

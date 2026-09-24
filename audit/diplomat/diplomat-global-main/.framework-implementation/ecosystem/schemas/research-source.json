@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prudence.local/schemas/research-source.json",
+  "title": "Approved external research source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "id", "title", "canonical_url", "publisher",
+    "source_type", "authority", "approved", "version", "content_hash",
+    "license", "upstream_group", "freshness", "claims"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "title": {"type": "string", "minLength": 1},
+    "canonical_url": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "publisher": {"type": "string", "minLength": 1},
+    "source_type": {"enum": ["official-documentation", "specification", "public-repository", "established-standard", "community-reference"]},
+    "authority": {"enum": ["primary", "secondary", "community"]},
+    "approved": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "by", "at", "scope"],
+      "properties": {
+        "status": {"const": "approved"},
+        "by": {"type": "string", "minLength": 1},
+        "at": {"type": "string", "format": "date-time"},
+        "scope": {"type": "string", "minLength": 1}
+      }
+    },
+    "version": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "value", "immutable_reference", "accessed_at"],
+      "properties": {
+        "kind": {"enum": ["commit", "tag", "release", "specification", "page-revision", "access-date"]},
+        "value": {"type": "string", "minLength": 1},
+        "immutable_reference": {"type": ["string", "null"]},
+        "published_or_updated_at": {"type": ["string", "null"], "format": "date-time"},
+        "accessed_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "content_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "license": {"type": "string", "minLength": 1},
+    "upstream_group": {"type": "string", "minLength": 1},
+    "freshness": {"type": "number", "minimum": 0, "maximum": 1},
+    "claims": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "id", "summary", "capability", "applies_to", "expected_markers",
+          "obsolete_markers", "applicability", "suggested_change",
+          "alternatives", "benefits", "trade_offs"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "capability": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "applies_to": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^(\\*|[a-z0-9]+(?:-[a-z0-9]+)*)$"}
+          },
+          "expected_markers": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "obsolete_markers": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "applicability": {"type": "string", "minLength": 1},
+          "suggested_change": {"type": "string", "minLength": 1},
+          "alternatives": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "benefits": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "trade_offs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

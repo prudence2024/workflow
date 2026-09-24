@@ -1,0 +1,55 @@
+schema_version: 1
+archive_formats:
+  - .zip
+limits:
+  max_files: 5000
+  max_total_uncompressed_bytes: 268435456
+  max_file_bytes: 16777216
+  max_compression_ratio: 100
+  max_path_depth: 20
+allowed_extensions:
+  - .html
+  - .htm
+  - .css
+  - .js
+  - .mjs
+  - .cjs
+  - .json
+  - .svg
+  - .txt
+  - .md
+  - .xml
+  - .webmanifest
+  - .png
+  - .jpg
+  - .jpeg
+  - .gif
+  - .webp
+  - .avif
+  - .ico
+  - .woff
+  - .woff2
+  - .ttf
+  - .otf
+text_extensions:
+  - .html
+  - .htm
+  - .css
+  - .js
+  - .mjs
+  - .cjs
+  - .json
+  - .svg
+  - .txt
+  - .md
+  - .xml
+  - .webmanifest
+blocked_filenames:
+  - .env
+  - .env.local
+  - id_rsa
+  - id_ed25519
+secret_scan:
+  fail_closed: true
+  max_text_scan_bytes: 4194304
+execution_policy: never-execute-archive-content
