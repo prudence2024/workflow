@@ -99,7 +99,9 @@ async function main() {
   console.log(`recorded migrations   : ${total} of ${journal.entries.length}`);
   console.log(`public tables         : ${tables.rows[0].n}`);
 
-  if (total !== journal.entries.length) {
+  // A dry run lists pending entries without changing anything, so a lower
+  // recorded count is the expected outcome, not a failure.
+  if (!dryRun && total !== journal.entries.length) {
     throw new Error(
       `migration count mismatch: recorded ${total} but the journal lists ${journal.entries.length}`,
     );
