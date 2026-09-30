@@ -1,22 +1,266 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
-import path from "path";
+import "server-only";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { newId } from "@/lib/id";
+import { EMPTY_PAYLOAD_SHA256, payloadSha256, signRequest } from "@/lib/sigv4";
 
-// Local filesystem stand-in for object storage (Cloudflare R2 in production).
-// Keeping this behind a small interface means swapping to R2 later only
-// requires changing this module, not any call sites.
+/**
+ * File storage.
+ *
+ * Cloudflare R2 is the production store for uploaded bytes (imports, exports,
+ * documents). Cloudinary remains the store for *images* only, because it does
+ * the transform/responsive work we would otherwise have to build.
+ *
+ * Two rules this module enforces rather than documents:
+ *
+ *   1. Bytes never go into PostgreSQL. Only a storage key is recorded.
+ *   2. There is no silent local fallback in production. A misconfigured
+ *      deployment raises instead of writing customer uploads to a container
+ *      filesystem that disappears (or leaks between instances) without warning.
+ *
+ * The local filesystem driver exists for development and for the test suite.
+ */
 
-const STORAGE_ROOT = path.join(/* turbopackIgnore: true */ process.cwd(), "storage", "uploads");
+export type StorageDriver = "r2" | "local";
 
-export async function saveBuffer(orgId: string, fileName: string, data: Buffer): Promise<string> {
-  const dir = path.join(STORAGE_ROOT, orgId);
-  await mkdir(dir, { recursive: true });
-  const safeName = `${newId()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-  const fullPath = path.join(dir, safeName);
-  await writeFile(fullPath, data);
-  return path.relative(process.cwd(), fullPath);
+export type StoredObject = {
+  key: string;
+  sizeBytes: number;
+  driver: StorageDriver;
+};
+
+export function isR2Configured(): boolean {
+  return Boolean(
+    process.env.R2_ACCOUNT_ID &&
+      process.env.R2_ACCESS_KEY_ID &&
+      process.env.R2_SECRET_ACCESS_KEY &&
+      process.env.R2_BUCKET,
+  );
 }
 
-export async function readStoredFile(storagePath: string): Promise<Buffer> {
-  return readFile(path.join(process.cwd(), storagePath));
+export function activeDriver(): StorageDriver {
+  if (isR2Configured()) return "r2";
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "R2 is not configured. Refusing to store uploads on the local filesystem in production — " +
+        "set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET.",
+    );
+  }
+  return "local";
+}
+
+const LOCAL_ROOT = path.join(process.cwd(), ".storage", "uploads");
+
+/** Tenant-prefixed key so one workspace can never address another's object. */
+function objectKey(orgId: string, fileName: string): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120);
+  return `org/${orgId}/${newId()}-${safe}`;
+}
+
+export async function saveBuffer(
+  orgId: string,
+  fileName: string,
+  data: Buffer,
+  contentType = "application/octet-stream",
+): Promise<StoredObject> {
+  const driver = activeDriver();
+  const key = objectKey(orgId, fileName);
+
+  if (driver === "r2") {
+    await r2Request("PUT", key, data, contentType);
+    return { key, sizeBytes: data.byteLength, driver };
+  }
+
+  const full = path.join(LOCAL_ROOT, key);
+  await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, data);
+  return { key, sizeBytes: data.byteLength, driver };
+}
+
+export async function readStoredFile(key: string): Promise<Buffer> {
+  const driver = activeDriver();
+  if (driver === "r2") {
+    const res = await r2Request("GET", key);
+    return Buffer.from(await res.arrayBuffer());
+  }
+  return readFile(path.join(LOCAL_ROOT, key));
+}
+
+export async function deleteStoredFile(key: string): Promise<void> {
+  const driver = activeDriver();
+  if (driver === "r2") {
+    await r2Request("DELETE", key);
+  }
+}
+
+/**
+ * Short-lived, signed download URL for the browser. R2 buckets stay private;
+ * the browser never receives credentials.
+ */
+/**
+ * Presign a GET so a browser can fetch one private object for a short window.
+ *
+ * A complete presigned URL needs the X-Amz-* query parameters to be part of the
+ * signed canonical request — a URL carrying only a Signature is rejected by S3,
+ * so the whole query string is built and signed here.
+ */
+export function signedDownloadUrl(key: string, expiresInSeconds = 300): string {
+  if (!isR2Configured()) {
+    throw new Error("signedDownloadUrl requires R2 configuration");
+  }
+  const accountId = process.env.R2_ACCOUNT_ID!;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
+  const bucket = process.env.R2_BUCKET!;
+  const host = `${accountId}.r2.cloudflarestorage.com`;
+  const requestPath = `/${bucket}/${key}`;
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+  const scope = `${dateStamp}/auto/s3/aws4_request`;
+
+  const query: Record<string, string> = {
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${accessKeyId}/${scope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(Math.min(Math.max(expiresInSeconds, 1), 604800)),
+    "X-Amz-SignedHeaders": "host",
+  };
+
+  const signed = signRequest({
+    method: "GET",
+    host,
+    path: requestPath,
+    query,
+    headers: {},
+    payloadHash: "UNSIGNED-PAYLOAD",
+    accessKeyId,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    region: "auto",
+    service: "s3",
+    now,
+  });
+
+  const signature = /Signature=([0-9a-f]+)/.exec(signed.authorization)?.[1];
+  if (!signature) throw new Error("could not extract signature");
+
+  const queryString = Object.keys(query)
+    .sort()
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(query[k])}`)
+    .join("&");
+
+  return `https://${host}${requestPath}?${queryString}&X-Amz-Signature=${signature}`;
+}
+
+async function r2Request(
+  method: "GET" | "PUT" | "DELETE",
+  key: string,
+  body?: Buffer,
+  contentType?: string,
+): Promise<Response> {
+  const accountId = process.env.R2_ACCOUNT_ID!;
+  const bucket = process.env.R2_BUCKET!;
+  const host = `${accountId}.r2.cloudflarestorage.com`;
+  const requestPath = `/${bucket}/${key}`;
+  const payload = body ?? Buffer.alloc(0);
+  const payloadHash = body ? payloadSha256(payload) : EMPTY_PAYLOAD_SHA256;
+
+  const headers: Record<string, string> = {
+    "content-type": contentType ?? "application/octet-stream",
+  };
+  if (body) headers["content-length"] = String(payload.byteLength);
+
+  const signedHeaders = signRequest({
+    method,
+    host,
+    path: requestPath,
+    headers,
+    payloadHash,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    region: "auto",
+    service: "s3",
+  });
+
+  const res = await fetch(`https://${host}${requestPath}`, {
+    method,
+    headers: signedHeaders,
+    body: body ? new Uint8Array(payload) : undefined,
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`R2 ${method} failed (${res.status}): ${detail.slice(0, 200)}`);
+  }
+  return res;
+}
+
+// ---------------------------------------------------------------------------
+// Cloudinary — images only
+// ---------------------------------------------------------------------------
+export type CloudinaryImage = { publicId: string; secureUrl: string; width: number; height: number };
+
+/**
+ * Upload an image to Cloudinary via a signed upload.
+ *
+ * Images are the only asset class that goes here: Cloudinary earns its place
+ * through transforms, not storage. Customer documents and spreadsheet imports
+ * go to R2.
+ */
+export async function uploadImage(
+  file: Buffer,
+  options: { folder: string; publicId?: string },
+): Promise<CloudinaryImage> {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) {
+    throw new Error("Cloudinary is not configured (CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET)");
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = options.folder;
+  const signature = cloudinarySignature({ folder, timestamp }, apiSecret);
+
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(file)]));
+  form.append("api_key", apiKey);
+  form.append("timestamp", String(timestamp));
+  form.append("folder", folder);
+  form.append("signature", signature);
+  if (options.publicId) form.append("public_id", options.publicId);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`Cloudinary upload failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  }
+  const data = (await res.json()) as {
+    public_id: string;
+    secure_url: string;
+    width: number;
+    height: number;
+  };
+  return {
+    publicId: data.public_id,
+    secureUrl: data.secure_url,
+    width: data.width,
+    height: data.height,
+  };
+}
+
+/** Cloudinary signs the alphabetically sorted parameter string, secret appended. */
+export function cloudinarySignature(
+  params: Record<string, string | number>,
+  apiSecret: string,
+): string {
+  const { createHash } = require("node:crypto") as typeof import("node:crypto");
+  const toSign = Object.keys(params)
+    .sort()
+    .map((k) => `${k}=${params[k]}`)
+    .join("&");
+  return createHash("sha1").update(`${toSign}${apiSecret}`).digest("hex");
 }

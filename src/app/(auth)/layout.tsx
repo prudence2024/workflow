@@ -9,11 +9,11 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-[var(--color-brand)] text-[13px] font-bold text-white">
             F
           </span>
-          FormflowOps
+          Workflow
         </Link>
         <div className="mx-auto w-full max-w-[380px] py-16">{children}</div>
         <p className="text-[12px] text-[var(--color-muted)]">
-          © {new Date().getFullYear()} FormflowOps. All rights reserved.
+          © {new Date().getFullYear()} Workflow. All rights reserved.
         </p>
       </div>
       <div className="relative hidden overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-ink)] lg:block">

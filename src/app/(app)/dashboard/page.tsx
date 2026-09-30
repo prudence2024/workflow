@@ -1,94 +1,39 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
-import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { activityEvents, campaignRecords, campaigns, contacts, imports } from "@/db/schema";
+import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+// Reads run as the restricted `workflow_app` role with a database-verified
+// tenant context — never through the owner connection.
+import { getDashboardSummary, getUsageCounters } from "@/lib/data";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui/Surfaces";
 import { Stat } from "@/components/ui/Data";
 import { StatusPill } from "@/components/ui/Status";
 import { LinkButton } from "@/components/ui/Button";
 import { formatDateTime, pct, timeAgo } from "@/lib/utils";
 import { PLANS } from "@/lib/plans";
-import { getUsageForOrg } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const orgs = await getUserOrganizations(user);
+  if (orgs.length === 0) redirect("/onboarding");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
-  startOfMonth.setHours(0, 0, 0, 0);
-
-  const [[contactCount], [activeCampaignCount], [submissionsThisMonth], [successfulThisMonth]] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(contacts)
-      .where(and(eq(contacts.orgId, org.orgId), sql`${contacts.archivedAt} is null`)),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(campaigns)
-      .where(and(eq(campaigns.orgId, org.orgId), eq(campaigns.status, "running"))),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(campaignRecords)
-      .where(and(eq(campaignRecords.orgId, org.orgId), gte(campaignRecords.createdAt, startOfMonth), ne(campaignRecords.status, "queued"))),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(campaignRecords)
-      .where(
-        and(
-          eq(campaignRecords.orgId, org.orgId),
-          gte(campaignRecords.createdAt, startOfMonth),
-          eq(campaignRecords.status, "successful"),
-        ),
-      ),
-  ]);
+  const summary = await getDashboardSummary({ user, org });
+  const contactCount = { count: summary.contacts };
+  const activeCampaignCount = { count: summary.activeCampaigns };
+  const submissionsThisMonth = { count: summary.attemptsThisMonth };
+  const successfulThisMonth = { count: summary.successfulThisMonth };
+  const currentCampaigns = summary.campaigns;
+  const recentImports = summary.recentImports;
+  const failedRecords = summary.attentionRecords;
+  const recentActivity = summary.activity;
 
   const successRate = pct(successfulThisMonth.count, submissionsThisMonth.count || 1);
 
-  const currentCampaigns = await db
-    .select()
-    .from(campaigns)
-    .where(and(eq(campaigns.orgId, org.orgId), sql`${campaigns.status} in ('running','ready','paused')`))
-    .orderBy(desc(campaigns.updatedAt))
-    .limit(5);
-
-  const recentImports = await db
-    .select()
-    .from(imports)
-    .where(eq(imports.orgId, org.orgId))
-    .orderBy(desc(imports.createdAt))
-    .limit(5);
-
-  const failedRecords = await db
-    .select({
-      id: campaignRecords.id,
-      campaignId: campaignRecords.campaignId,
-      resultMessage: campaignRecords.resultMessage,
-      failureCategory: campaignRecords.failureCategory,
-      status: campaignRecords.status,
-      updatedAt: campaignRecords.updatedAt,
-      campaignName: campaigns.name,
-    })
-    .from(campaignRecords)
-    .innerJoin(campaigns, eq(campaignRecords.campaignId, campaigns.id))
-    .where(and(eq(campaignRecords.orgId, org.orgId), sql`${campaignRecords.status} in ('failed','human_action_required')`))
-    .orderBy(desc(campaignRecords.updatedAt))
-    .limit(6);
-
-  const recentActivity = await db
-    .select()
-    .from(activityEvents)
-    .where(eq(activityEvents.orgId, org.orgId))
-    .orderBy(desc(activityEvents.createdAt))
-    .limit(8);
-
-  const usage = await getUsageForOrg(org.orgId);
+  const usage = await getUsageCounters({ user, org });
   const plan = PLANS[org.planKey as keyof typeof PLANS] ?? PLANS.free;
 
   return (
@@ -169,7 +114,7 @@ export default async function DashboardPage() {
                       <p className="truncate text-[13px] font-medium text-[var(--color-ink)]">{r.campaignName}</p>
                       <StatusPill status={r.status} />
                     </div>
-                    <p className="mt-1 truncate text-[12px] text-[var(--color-muted)]">{r.resultMessage ?? r.failureCategory ?? "—"}</p>
+                    <p className="mt-1 truncate text-[12px] text-[var(--color-muted)]">{r.resultMessage ?? "—"}</p>
                   </Link>
                 ))}
               </div>

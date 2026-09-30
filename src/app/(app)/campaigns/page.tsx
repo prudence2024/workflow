@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
-import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { campaigns } from "@/db/schema";
+import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { listCampaigns } from "@/lib/data";
 import { Card, EmptyState } from "@/components/ui/Surfaces";
 import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
@@ -15,10 +13,12 @@ export const dynamic = "force-dynamic";
 export default async function CampaignsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const orgs = await getUserOrganizations(user);
+  if (orgs.length === 0) redirect("/onboarding");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
-  const rows = await db.select().from(campaigns).where(eq(campaigns.orgId, org.orgId)).orderBy(desc(campaigns.updatedAt));
+  const rows = await listCampaigns({ user, org });
 
   return (
     <div className="space-y-5">
@@ -38,17 +38,18 @@ export default async function CampaignsPage() {
         ) : (
           <Table>
             <THead>
-              <TH>Campaign</TH>
-              <TH>Type</TH>
-              <TH>Progress</TH>
-              <TH>Status</TH>
-              <TH>Updated</TH>
+              <TR>
+                <TH>Campaign</TH>
+                <TH>Type</TH>
+                <TH>Progress</TH>
+                <TH>Status</TH>
+                <TH>Updated</TH>
+              </TR>
             </THead>
             <tbody>
               {rows.map((c) => {
-                const stats = (c.stats as Record<string, number>) ?? {};
-                const total = stats.total ?? 0;
-                const done = (stats.successful ?? 0) + (stats.failed ?? 0) + (stats.skipped ?? 0);
+                const total = c.stats.total ?? 0;
+                const done = (c.stats.successful ?? 0) + (c.stats.failed ?? 0) + (c.stats.skipped ?? 0);
                 return (
                   <TR key={c.id}>
                     <TD>

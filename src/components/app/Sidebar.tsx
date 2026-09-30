@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactElement } from "react";
 import { cn } from "@/lib/utils";
+import { BrandLockup } from "@/components/brand/Logo";
 
 const ICONS: Record<string, ReactElement> = {
   dashboard: (
@@ -13,6 +14,8 @@ const ICONS: Record<string, ReactElement> = {
   campaigns: <path d="M3 11l18-7-7 18-2-8-9-3z" />,
   imports: <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />,
   templates: <path d="M4 4h16v16H4V4zm4 4h8m-8 4h8m-8 4h5" />,
+  communications: <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
+  forms: <path d="M4 3h16v18H4zM8 8h8M8 12h8M8 16h4" />,
   reports: <path d="M4 20V10m6 10V4m6 16v-7" />,
   settings: (
     <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9c.26.604.852 1 1.51 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.51 1z" />
@@ -30,9 +33,11 @@ function Icon({ name }: { name: string }) {
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { href: "/contacts", label: "Contacts", icon: "contacts" },
+  { href: "/contacts", label: "Records", icon: "contacts" },
   { href: "/campaigns", label: "Campaigns", icon: "campaigns" },
   { href: "/imports", label: "Imports", icon: "imports" },
+  { href: "/communications", label: "Communications", icon: "communications" },
+  { href: "/form-operations", label: "Form operations", icon: "forms" },
   { href: "/templates", label: "Templates", icon: "templates" },
   { href: "/reports", label: "Reports", icon: "reports" },
   { href: "/settings/organization", label: "Settings", icon: "settings" },
@@ -48,11 +53,8 @@ export function Sidebar({ isPlatformAdmin, asMobile = false }: { isPlatformAdmin
         asMobile ? "flex h-full" : "hidden lg:flex",
       )}
     >
-      <div className="flex h-16 items-center gap-2 border-b border-[var(--color-border)] px-5">
-        <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-[var(--color-brand)] text-[13px] font-bold text-white">
-          F
-        </span>
-        <span className="font-display text-[15px] font-semibold text-[var(--color-ink)]">FormflowOps</span>
+      <div className="flex h-16 items-center border-b border-[var(--color-border)] px-5">
+        <BrandLockup href="/dashboard" size={28} />
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {NAV.map((item) => {

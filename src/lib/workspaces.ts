@@ -1,6 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
-import { withTenant, withUserContext, type TenantTx } from "@/lib/tenant";
+import { withTenant, withUserContext, type Identity, type TenantTx } from "@/lib/tenant";
 import { slugify } from "@/lib/validation";
 
 /**
@@ -86,11 +86,11 @@ export type MemberRow = {
 };
 
 export async function listMembers(
-  clerkUserId: string,
+  identity: Identity,
   orgId: string,
   fn: (tx: TenantTx) => Promise<MemberRow[]>,
 ): Promise<MemberRow[]> {
-  return withTenant(clerkUserId, orgId, fn);
+  return withTenant(identity, orgId, fn);
 }
 
 /** Consolidates the members list query used by the team settings screen. */

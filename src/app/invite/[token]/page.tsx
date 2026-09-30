@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
+// Intentionally privileged: an invitee is not yet a member of the inviting
+// workspace, so no tenant context can exist. The secret token in the URL is the
+// authorisation, and it is matched against the signed-in identity by the
+// database in app.accept_invitation when the form is submitted.
 import { db } from "@/db";
 import { organizationInvitations, organizations } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { acceptInvitationAction } from "@/app/(app)/settings/actions";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Surfaces";
+
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
 
 export default async function InvitePage({
   params,

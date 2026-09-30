@@ -5,6 +5,9 @@ import { Card, CardBody, CardHeader, Alert } from "@/components/ui/Surfaces";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Label } from "@/components/ui/Field";
 
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
+
 export default async function NewImportPage({
   searchParams,
 }: {

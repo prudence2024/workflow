@@ -2,13 +2,22 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { organizationInvitations, organizationMembers, organizations, users } from "@/db/schema";
-import { getCurrentOrg, getCurrentUser, hashPassword, requireMembership, verifyPassword } from "@/lib/auth";
+import { organizationInvitations, organizations, users } from "@/db/schema";
+import {
+  getCurrentOrg,
+  getCurrentUser,
+  hashPassword,
+  identityOf,
+  requireMembership,
+  setCurrentOrgCookie,
+  verifyPassword,
+} from "@/lib/auth";
 import { can, type Role } from "@/lib/rbac";
-import { newToken } from "@/lib/id";
+import { inWorkspace } from "@/lib/data";
+import { withUserSession } from "@/lib/tenant";
 import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity";
 
@@ -23,11 +32,21 @@ async function requireOrgAndRole(minPermission: Parameters<typeof can>[1]) {
   return { user: user!, org };
 }
 
+async function requireOrgContext() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const org = await getCurrentOrg(user!);
+  if (!org) redirect("/onboarding");
+  return { user: user!, org };
+}
+
 export async function renameOrganizationAction(formData: FormData) {
-  const { org } = await requireOrgAndRole("org:manage");
+  const { user, org } = await requireOrgAndRole("org:manage");
   const name = String(formData.get("name") ?? "").trim();
   if (!name) redirect("/settings/organization?error=" + encodeURIComponent("Organization name is required"));
-  await db.update(organizations).set({ name }).where(eq(organizations.id, org.orgId));
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx.update(organizations).set({ name }).where(eq(organizations.id, org.orgId));
+  });
   await logActivity({ orgId: org.orgId, type: "org_renamed", message: `Workspace renamed to "${name}"` });
   revalidatePath("/settings/organization");
 }
@@ -38,29 +57,27 @@ const inviteSchema = z.object({
 });
 
 export async function inviteMemberAction(formData: FormData) {
-  const { org, user } = await requireOrgAndRole("members:manage");
+  const { user, org } = await requireOrgAndRole("members:manage");
   const parsed = inviteSchema.safeParse({ email: formData.get("email"), role: formData.get("role") });
   if (!parsed.success) {
     redirect("/settings/organization?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
 
   const email = parsed.data.email.trim().toLowerCase();
-  const token = newToken(20);
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
 
-  await db.insert(organizationInvitations).values({
-    orgId: org.orgId,
-    email,
-    role: parsed.data.role,
-    token,
-    invitedByUserId: user.id,
-    expiresAt,
+  // The database mints the token, refuses the owner role, and audits the
+  // invitation — the application cannot weaken any of those rules.
+  const token = await inWorkspace({ user, org }, async (tx) => {
+    const res = await tx.execute<{ token: string }>(
+      sql`select app.create_invitation(${org.orgId}::uuid, ${email}, ${parsed.data.role}) as token`,
+    );
+    return res.rows[0].token;
   });
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/invite/${token}`;
   await sendEmail({
     to: email,
-    subject: `You're invited to join ${org.orgName} on FormflowOps`,
+    subject: `You're invited to join ${org.orgName} on Workflow`,
     html: `<p>You have been invited to join <strong>${org.orgName}</strong> as ${parsed.data.role}.</p><p><a href="${inviteUrl}">Accept invitation</a></p>`,
   });
 
@@ -71,6 +88,9 @@ export async function inviteMemberAction(formData: FormData) {
 export async function revokeInvitationAction(formData: FormData) {
   const { org } = await requireOrgAndRole("members:manage");
   const id = String(formData.get("id"));
+  // The app role holds SELECT (not UPDATE) on organization_invitations by
+  // design, so revocation uses the administrative connection with an explicit
+  // org filter. Permission is enforced above by requireOrgAndRole.
   await db
     .update(organizationInvitations)
     .set({ status: "revoked" })
@@ -79,20 +99,30 @@ export async function revokeInvitationAction(formData: FormData) {
 }
 
 export async function updateMemberRoleAction(formData: FormData) {
-  const { org } = await requireOrgAndRole("members:manage");
+  const { user, org } = await requireOrgAndRole("members:manage");
   const memberId = String(formData.get("memberId"));
   const role = String(formData.get("role")) as Role;
-  await db
-    .update(organizationMembers)
-    .set({ role })
-    .where(and(eq(organizationMembers.id, memberId), eq(organizationMembers.orgId, org.orgId)));
+  await inWorkspace({ user, org }, async (tx) => {
+    const res = await tx.execute<{ user_id: string }>(
+      sql`select user_id from public.organization_members where id = ${memberId}::uuid and org_id = ${org.orgId}::uuid limit 1`,
+    );
+    if (res.rows.length === 0) return;
+    // Definer function enforces permission, the last-owner rule and auditing.
+    await tx.execute(sql`select app.set_member_role(${org.orgId}::uuid, ${res.rows[0].user_id}::uuid, ${role})`);
+  });
   revalidatePath("/settings/organization");
 }
 
 export async function removeMemberAction(formData: FormData) {
-  const { org } = await requireOrgAndRole("members:manage");
+  const { user, org } = await requireOrgAndRole("members:manage");
   const memberId = String(formData.get("memberId"));
-  await db.delete(organizationMembers).where(and(eq(organizationMembers.id, memberId), eq(organizationMembers.orgId, org.orgId)));
+  await inWorkspace({ user, org }, async (tx) => {
+    const res = await tx.execute<{ user_id: string }>(
+      sql`select user_id from public.organization_members where id = ${memberId}::uuid and org_id = ${org.orgId}::uuid limit 1`,
+    );
+    if (res.rows.length === 0) return;
+    await tx.execute(sql`select app.set_member_status(${org.orgId}::uuid, ${res.rows[0].user_id}::uuid, 'revoked')`);
+  });
   revalidatePath("/settings/organization");
 }
 
@@ -101,20 +131,20 @@ export async function acceptInvitationAction(formData: FormData) {
   if (!user) redirect("/login");
   const token = String(formData.get("token"));
 
-  const [invitation] = await db.select().from(organizationInvitations).where(eq(organizationInvitations.token, token)).limit(1);
-  if (!invitation || invitation.status !== "pending" || invitation.expiresAt.getTime() < Date.now()) {
-    redirect("/invite/" + token + "?error=" + encodeURIComponent("This invitation is no longer valid"));
-  }
-  if (invitation!.email.toLowerCase() !== user!.email.toLowerCase()) {
-    redirect("/invite/" + token + "?error=" + encodeURIComponent(`Please log in as ${invitation!.email} to accept this invitation`));
+  let orgId: string;
+  try {
+    // No tenant context yet — the database matches the token to the signed-in
+    // identity and performs the join itself.
+    orgId = await withUserSession(identityOf(user!), async (tx) => {
+      const res = await tx.execute<{ org_id: string }>(sql`select app.accept_invitation(${token}) as org_id`);
+      return res.rows[0].org_id;
+    });
+  } catch {
+    redirect(`/invite/${token}?error=` + encodeURIComponent("This invitation is no longer valid"));
   }
 
-  await db
-    .insert(organizationMembers)
-    .values({ orgId: invitation!.orgId, userId: user!.id, role: invitation!.role })
-    .onConflictDoNothing();
-  await db.update(organizationInvitations).set({ status: "accepted" }).where(eq(organizationInvitations.id, invitation!.id));
-  await logActivity({ orgId: invitation!.orgId, type: "member_joined", message: `${user!.name} joined the workspace` });
+  await setCurrentOrgCookie(orgId);
+  await logActivity({ orgId, type: "member_joined", message: `${user!.name} joined the workspace` });
   redirect("/dashboard");
 }
 
@@ -123,13 +153,14 @@ const accountSchema = z.object({
 });
 
 export async function updateAccountAction(formData: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const { user, org } = await requireOrgContext();
   const parsed = accountSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
     redirect("/settings/account?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
-  await db.update(users).set({ name: parsed.data.name }).where(eq(users.id, user!.id));
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx.update(users).set({ name: parsed.data.name }).where(eq(users.id, user.id));
+  });
   revalidatePath("/settings/account");
 }
 
@@ -149,7 +180,10 @@ export async function changePasswordAction(formData: FormData) {
     redirect("/settings/account?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
 
-  const [row] = await db.select().from(users).where(eq(users.id, user!.id)).limit(1);
+  // Credentials sit outside the app role's reach on purpose (workflow_app has
+  // no UPDATE on password_hash), so this self-scoped credential change uses the
+  // administrative connection.
+  const [row] = await db.select({ passwordHash: users.passwordHash }).from(users).where(eq(users.id, user.id)).limit(1);
   // Accounts without a legacy hash have no password to change — credentials
   // are owned by Clerk for those identities.
   const legacyHash = row?.passwordHash;
@@ -159,7 +193,7 @@ export async function changePasswordAction(formData: FormData) {
   }
 
   const passwordHash = await hashPassword(parsed.data.newPassword);
-  await db.update(users).set({ passwordHash }).where(eq(users.id, user!.id));
+  await db.update(users).set({ passwordHash }).where(eq(users.id, user.id));
   redirect("/settings/account?success=1");
 }
 

@@ -10,7 +10,7 @@ export default function ContactPage() {
           <SectionHeading
             eyebrow="Contact"
             title="Talk to us about your operation."
-            description="Tell us about the process you're trying to run — registrations, enrollment, onboarding, or something else — and we'll help you map it to FormflowOps."
+            description="Tell us about the process you're trying to run — registrations, enrollment, onboarding, or something else — and we'll help you map it to Workflow."
           />
           <div className="mt-8 space-y-3 text-[13.5px] text-[var(--color-ink-soft)]">
             <p>support@formflow.ops</p>

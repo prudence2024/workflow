@@ -31,8 +31,10 @@ export function isAllowedChat(chatId: string | number | undefined | null): boole
 const HELP = [
   "*Workflow operations bot*",
   "/status — workspaces, members, contacts, campaigns",
+  "/health — database, worker and configuration checks",
+  "/usage — metered usage this month",
+  "/failed — sends and submissions needing a human",
   "/outbox — queue depth by state",
-  "/health — database and configuration checks",
   "/help — this message",
 ].join("\n");
 
@@ -68,6 +70,14 @@ export async function handleTelegramCommand(
     case "/health":
       text = await healthReport();
       action = "telegram_health";
+      break;
+    case "/usage":
+      text = await usageReport();
+      action = "telegram_usage";
+      break;
+    case "/failed":
+      text = await failedReport();
+      action = "telegram_failed";
       break;
     default:
       text = `Unknown command: ${command || "(empty)"}\n\n${HELP}`;
@@ -159,10 +169,93 @@ async function healthReport(): Promise<string> {
   checks.push(`Clerk: ${process.env.CLERK_SECRET_KEY ? "configured" : "NOT configured"}`);
   checks.push(`Email (Resend): ${process.env.RESEND_API_KEY ? "configured" : "not configured"}`);
   checks.push(`SMS (Termii): ${process.env.TERMII_API_KEY ? "configured" : "not configured"}`);
+  checks.push(`Storage (R2): ${isR2Configured() ? "configured" : "not configured"}`);
+  checks.push(`Worker secret: ${process.env.WORKER_SECRET ? "configured" : "NOT configured"}`);
   checks.push(
     `Platform admin bootstrap: ${process.env.PLATFORM_ADMIN_CLERK_USER_ID ? "configured" : "NOT configured"}`,
   );
   return ["*Health*", ...checks.map((c) => `• ${c}`)].join("\n");
+}
+
+async function usageReport(): Promise<string> {
+  try {
+    const rows = await db.transaction(async (tx) => {
+      await tx.execute(sql`set local role workflow_worker`);
+      const res = await tx.execute<{ metric: string; total: string }>(sql`
+        select metric, sum(count)::text as total
+          from public.usage_counters
+         where period_start = date_trunc('month', now())::date
+         group by metric
+         order by metric
+      `);
+      return res.rows;
+    });
+
+    if (rows.length === 0) return "*Usage*\n\nNo metered usage recorded this month.";
+
+    return [
+      "*Usage — this month*",
+      ...rows.map((r) => `• ${r.metric}: ${r.total}`),
+      "",
+      "Counters are incremented by the application as work completes; they are not a billing statement.",
+    ].join("\n");
+  } catch (err) {
+    return `*Usage*\n\nUnavailable: ${err instanceof Error ? err.message : "query failed"}`;
+  }
+}
+
+async function failedReport(): Promise<string> {
+  try {
+    const [outbox, submissions, messages] = await db.transaction(async (tx) => {
+      await tx.execute(sql`set local role workflow_worker`);
+      const o = await tx.execute<{ status: string; n: string }>(sql`
+        select status, count(*)::text as n from public.outbox_events
+         where status in ('failed', 'exhausted', 'ambiguous')
+         group by status order by status
+      `);
+      const s = await tx.execute<{ status: string; n: string }>(sql`
+        select status, count(*)::text as n from public.campaign_records
+         where status in ('failed', 'human_action_required', 'pending_review', 'review')
+         group by status order by status
+      `);
+      const m = await tx.execute<{ status: string; n: string }>(sql`
+        select status, count(*)::text as n from public.messages
+         where status in ('failed', 'bounced', 'unknown')
+         group by status order by status
+      `);
+      return [o.rows, s.rows, m.rows];
+    });
+
+    const nothing =
+      outbox.length === 0 && submissions.length === 0 && messages.length === 0;
+    if (nothing) return "*Needs attention*\n\nNothing is waiting on a human.";
+
+    const section = (title: string, rows: { status: string; n: string }[]) =>
+      rows.length === 0 ? [`${title}: none`] : [title, ...rows.map((r) => `• ${r.status}: ${r.n}`)];
+
+    return [
+      "*Needs attention*",
+      "",
+      ...section("Delivery queue", outbox),
+      "",
+      ...section("Form submissions", submissions),
+      "",
+      ...section("Messages", messages),
+      "",
+      "Ambiguous queue items are never retried automatically — open the Communications Centre to decide.",
+    ].join("\n");
+  } catch (err) {
+    return `*Needs attention*\n\nUnavailable: ${err instanceof Error ? err.message : "query failed"}`;
+  }
+}
+
+function isR2Configured(): boolean {
+  return Boolean(
+    process.env.R2_ACCOUNT_ID &&
+      process.env.R2_ACCESS_KEY_ID &&
+      process.env.R2_SECRET_ACCESS_KEY &&
+      process.env.R2_BUCKET,
+  );
 }
 
 async function auditBotAction(

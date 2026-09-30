@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
 import { getCurrentUser } from "@/lib/auth";
 import { MobileNav } from "@/components/marketing/MobileNav";
+import { BrandLockup } from "@/components/brand/Logo";
 
 const LINKS = [
   { href: "/product", label: "Product" },
@@ -17,12 +18,7 @@ export async function MarketingNav() {
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-white/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1240px] items-center justify-between px-6">
-        <Link href="/" className="flex items-center gap-2 font-display text-[17px] font-semibold text-[var(--color-ink)]">
-          <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-[var(--color-brand)] text-[13px] font-bold text-white">
-            F
-          </span>
-          Formflow<span className="text-[var(--color-brand)]">Ops</span>
-        </Link>
+        <BrandLockup href="/" size={30} />
 
         <nav className="hidden items-center gap-7 lg:flex">
           {LINKS.map((link) => (

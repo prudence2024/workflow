@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
+import { inWorkspace } from "@/lib/data";
 
 async function requireOrgContext() {
   const user = await getCurrentUser();
@@ -23,7 +23,7 @@ const templateSchema = z.object({
 });
 
 export async function createTemplateAction(formData: FormData) {
-  const { org } = await requireOrgContext();
+  const { user, org } = await requireOrgContext();
   const parsed = templateSchema.safeParse({
     name: formData.get("name"),
     subject: formData.get("subject"),
@@ -33,13 +33,15 @@ export async function createTemplateAction(formData: FormData) {
     redirect("/templates?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
 
-  await db.insert(messageTemplates).values({ orgId: org.orgId, ...parsed.data });
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx.insert(messageTemplates).values({ orgId: org.orgId, ...parsed.data });
+  });
   revalidatePath("/templates");
   redirect("/templates");
 }
 
 export async function updateTemplateAction(formData: FormData) {
-  const { org } = await requireOrgContext();
+  const { user, org } = await requireOrgContext();
   const id = String(formData.get("id"));
   const parsed = templateSchema.safeParse({
     name: formData.get("name"),
@@ -50,17 +52,23 @@ export async function updateTemplateAction(formData: FormData) {
     redirect(`/templates/${id}?error=` + encodeURIComponent(parsed.error.issues[0].message));
   }
 
-  await db
-    .update(messageTemplates)
-    .set({ ...parsed.data, updatedAt: new Date() })
-    .where(and(eq(messageTemplates.id, id), eq(messageTemplates.orgId, org.orgId)));
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx
+      .update(messageTemplates)
+      .set({ ...parsed.data, updatedAt: new Date() })
+      .where(and(eq(messageTemplates.id, id), eq(messageTemplates.orgId, org.orgId)));
+  });
   revalidatePath("/templates");
   redirect("/templates");
 }
 
 export async function deleteTemplateAction(formData: FormData) {
-  const { org } = await requireOrgContext();
+  const { user, org } = await requireOrgContext();
   const id = String(formData.get("id"));
-  await db.delete(messageTemplates).where(and(eq(messageTemplates.id, id), eq(messageTemplates.orgId, org.orgId)));
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx
+      .delete(messageTemplates)
+      .where(and(eq(messageTemplates.id, id), eq(messageTemplates.orgId, org.orgId)));
+  });
   revalidatePath("/templates");
 }

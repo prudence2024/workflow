@@ -5,6 +5,9 @@ import { Card, CardBody, CardHeader, Alert } from "@/components/ui/Surfaces";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label, Select } from "@/components/ui/Field";
 
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
+
 const TYPES = [
   "Event Registration",
   "School Enrollment",

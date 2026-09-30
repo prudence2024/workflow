@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { messageTemplates } from "@/db/schema";
+import { listTemplates } from "@/lib/data";
 import { createTemplateAction, deleteTemplateAction } from "@/app/(app)/templates/actions";
 import { Card, CardBody, CardHeader, Alert, EmptyState } from "@/components/ui/Surfaces";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label, Textarea } from "@/components/ui/Field";
+
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
 
 export default async function TemplatesPage({
   searchParams,
@@ -19,7 +20,7 @@ export default async function TemplatesPage({
   if (!org) redirect("/onboarding");
   const { error } = await searchParams;
 
-  const templates = await db.select().from(messageTemplates).where(eq(messageTemplates.orgId, org.orgId)).orderBy(desc(messageTemplates.updatedAt));
+  const templates = await listTemplates({ user, org });
 
   return (
     <div className="space-y-5">

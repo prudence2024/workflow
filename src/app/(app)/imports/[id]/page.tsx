@@ -1,9 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { and, eq } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { customFieldDefinitions, importErrors, imports } from "@/db/schema";
+import { getImportDetail } from "@/lib/data";
 import { commitImportAction, saveMappingAndValidateAction } from "@/app/(app)/imports/actions";
 import { Card, CardBody, CardHeader, Alert, EmptyState } from "@/components/ui/Surfaces";
 import { Button, LinkButton } from "@/components/ui/Button";
@@ -11,6 +9,9 @@ import { FieldGroup, Label, Select } from "@/components/ui/Field";
 import { StatusPill } from "@/components/ui/Status";
 import { Stat, TD, TH, THead, TR, Table } from "@/components/ui/Data";
 import { formatDateTime } from "@/lib/utils";
+
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
 
 const CONTACT_FIELDS: { key: string; label: string; required?: boolean }[] = [
   { key: "firstName", label: "First name", required: true },
@@ -35,16 +36,10 @@ export default async function ImportDetailPage({ params }: { params: Promise<{ i
   if (!org) redirect("/onboarding");
 
   const { id } = await params;
-  const [record] = await db.select().from(imports).where(and(eq(imports.id, id), eq(imports.orgId, org.orgId))).limit(1);
+  const { record, errors, customFields: definitions } = await getImportDetail({ user, org }, id);
   if (!record) notFound();
 
-  const columns = (record.columns as string[]) ?? [];
-  const mapping = (record.mapping as Record<string, string>) ?? {};
-  const definitions = await db.select().from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
-
-  const errors = record.status === "validated" || record.status === "imported"
-    ? await db.select().from(importErrors).where(eq(importErrors.importId, id)).limit(50)
-    : [];
+  const { columns, mapping } = record;
 
   return (
     <div className="space-y-5">

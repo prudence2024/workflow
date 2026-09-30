@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { getUsageForOrg } from "@/lib/usage";
+import { getUsageCounters } from "@/lib/data";
 import { PLANS, PLAN_ORDER } from "@/lib/plans";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
@@ -15,7 +15,7 @@ export default async function UsagePage() {
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
-  const usage = await getUsageForOrg(org.orgId);
+  const usage = await getUsageCounters({ user, org });
   const plan = PLANS[org.planKey as keyof typeof PLANS] ?? PLANS.free;
 
   const metrics = [

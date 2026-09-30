@@ -1,18 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { and, desc, eq } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import {
-  activityEvents,
-  campaignRecords,
-  campaigns,
-  contactTags,
-  contacts,
-  customFieldDefinitions,
-  notes,
-  tags,
-} from "@/db/schema";
+import { getContactDetail, listCustomFields } from "@/lib/data";
 import {
   addNoteAction,
   addTagAction,
@@ -45,35 +34,20 @@ export default async function ContactDetailPage({
   const { id } = await params;
   const { error } = await searchParams;
 
-  const [contact] = await db.select().from(contacts).where(and(eq(contacts.id, id), eq(contacts.orgId, org.orgId))).limit(1);
-  if (!contact) notFound();
+  const detail = await getContactDetail({ user, org }, id);
+  if (!detail.contact) notFound();
+  const contact = detail.contact;
 
-  const [definitions, contactTagRows, allTags, timeline, contactNotes, campaignHistory] = await Promise.all([
-    db.select().from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId)),
-    db
-      .select({ id: tags.id, name: tags.name })
-      .from(contactTags)
-      .innerJoin(tags, eq(contactTags.tagId, tags.id))
-      .where(eq(contactTags.contactId, id)),
-    db.select().from(tags).where(eq(tags.orgId, org.orgId)),
-    db.select().from(activityEvents).where(eq(activityEvents.contactId, id)).orderBy(desc(activityEvents.createdAt)).limit(30),
-    db.select().from(notes).where(eq(notes.contactId, id)).orderBy(desc(notes.createdAt)),
-    db
-      .select({
-        id: campaignRecords.id,
-        status: campaignRecords.status,
-        resultMessage: campaignRecords.resultMessage,
-        updatedAt: campaignRecords.updatedAt,
-        campaignId: campaigns.id,
-        campaignName: campaigns.name,
-      })
-      .from(campaignRecords)
-      .innerJoin(campaigns, eq(campaignRecords.campaignId, campaigns.id))
-      .where(eq(campaignRecords.contactId, id))
-      .orderBy(desc(campaignRecords.updatedAt)),
-  ]);
+  const [definitions] = await Promise.all([listCustomFields({ user, org })]);
+  const {
+    tags: contactTagRows,
+    allTags,
+    campaignHistory,
+    activity: timeline,
+    notes: contactNotes,
+  } = detail;
 
-  const customFields = (contact.customFields as Record<string, string>) ?? {};
+  const customFields = contact.customFields;
 
   return (
     <div className="space-y-5">

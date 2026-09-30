@@ -1,24 +1,25 @@
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
-import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { imports } from "@/db/schema";
+import Link from "next/link";
+import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { listImports } from "@/lib/data";
 import { Card, CardBody, EmptyState } from "@/components/ui/Surfaces";
 import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
 import { TD, TH, THead, TR, Table } from "@/components/ui/Data";
 import { formatDateTime } from "@/lib/utils";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const orgs = await getUserOrganizations(user);
+  if (orgs.length === 0) redirect("/onboarding");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
-  const rows = await db.select().from(imports).where(eq(imports.orgId, org.orgId)).orderBy(desc(imports.createdAt));
+  // Tenant-scoped read through the restricted role — not the owner connection.
+  const rows = await listImports({ user, org });
 
   return (
     <div className="space-y-5">
@@ -34,17 +35,21 @@ export default async function ImportsPage() {
 
       <Card>
         {rows.length === 0 ? (
-          <EmptyState title="No imports yet" description="Upload an XLSX or CSV file to bring records into your workspace." action={<LinkButton href="/imports/new" size="sm">New import</LinkButton>} />
+          <CardBody>
+            <EmptyState title="No imports yet" description="Upload an XLSX or CSV file to bring records into your workspace." action={<LinkButton href="/imports/new" size="sm">New import</LinkButton>} />
+          </CardBody>
         ) : (
           <Table>
             <THead>
-              <TH>File</TH>
-              <TH>Rows</TH>
-              <TH>Valid</TH>
-              <TH>Invalid</TH>
-              <TH>Duplicate</TH>
-              <TH>Status</TH>
-              <TH>Uploaded</TH>
+              <TR>
+                <TH>File</TH>
+                <TH>Rows</TH>
+                <TH>Valid</TH>
+                <TH>Invalid</TH>
+                <TH>Duplicate</TH>
+                <TH>Status</TH>
+                <TH>Uploaded</TH>
+              </TR>
             </THead>
             <tbody>
               {rows.map((imp) => (

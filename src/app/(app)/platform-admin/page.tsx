@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { desc, sql } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+// Intentionally privileged: this operator console is the ONE customer-app route
+// that reads across tenants. Access is gated by isPlatformAdmin, which is
+// resolved from the database allowlist (app.is_platform_admin_user) — never from
+// a request value. Every ordinary customer page reads through @/lib/data.
 import { db } from "@/db";
 import { campaignRecords, campaigns, contacts, messages, organizationMembers, organizations, users } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";

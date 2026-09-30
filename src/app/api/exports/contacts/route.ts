@@ -1,8 +1,6 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { contacts } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
+import { listContactExportRows } from "@/lib/data";
 import { buildCsv, buildWorkbook } from "@/lib/spreadsheet";
 import { incrementUsage } from "@/lib/usage";
 
@@ -14,8 +12,7 @@ export async function GET(req: NextRequest) {
 
   const format = req.nextUrl.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
-  const rows = await db.select().from(contacts).where(eq(contacts.orgId, org.orgId));
-  const activeRows = rows.filter((r) => !r.archivedAt);
+  const activeRows = await listContactExportRows({ user, org });
   const columns = ["firstName", "lastName", "email", "phone", "company", "address", "status", "createdAt"];
   const data = activeRows.map((r) => ({
     firstName: r.firstName,

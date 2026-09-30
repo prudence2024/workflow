@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLockup } from "@/components/brand/Logo";
 
 const COLUMNS = [
   {
@@ -33,15 +34,10 @@ export function MarketingFooter() {
     <footer className="border-t border-[var(--color-border)] bg-white">
       <div className="mx-auto grid max-w-[1240px] gap-10 px-6 py-14 md:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div>
-          <Link href="/" className="flex items-center gap-2 font-display text-[16px] font-semibold text-[var(--color-ink)]">
-            <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-[var(--color-brand)] text-[13px] font-bold text-white">
-              F
-            </span>
-            FormflowOps
-          </Link>
+          <BrandLockup href="/" size={30} />
           <p className="mt-3 max-w-xs text-[13.5px] leading-relaxed text-[var(--color-muted)]">
-            The operations platform for form-driven processes — from spreadsheet to a controlled, trackable workflow
-            with a persistent history for every person.
+            Manage records, automate processes, communicate through bulk email and SMS, organize campaigns, schedule
+            reminders and report on operations — all in one multi-tenant workspace.
           </p>
         </div>
         {COLUMNS.map((col) => (
@@ -61,7 +57,7 @@ export function MarketingFooter() {
       </div>
       <div className="border-t border-[var(--color-border)] px-6 py-5">
         <p className="mx-auto max-w-[1240px] text-[12.5px] text-[var(--color-muted)]">
-          © {new Date().getFullYear()} FormflowOps. All automation runs through authorized access only — the platform
+          © {new Date().getFullYear()} Workflow. All automation runs through authorized access only — the platform
           never bypasses CAPTCHA, OTP, or anti-bot protections.
         </p>
       </div>

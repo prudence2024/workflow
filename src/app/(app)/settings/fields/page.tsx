@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { customFieldDefinitions } from "@/db/schema";
+import { listCustomFields } from "@/lib/data";
 import { createCustomFieldAction, deleteCustomFieldAction } from "@/app/(app)/contacts/actions";
 import { Card, CardBody, CardHeader, Alert, EmptyState } from "@/components/ui/Surfaces";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label, Select } from "@/components/ui/Field";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
+
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
 
 export default async function CustomFieldsPage({
   searchParams,
@@ -20,7 +21,7 @@ export default async function CustomFieldsPage({
   if (!org) redirect("/onboarding");
   const { error } = await searchParams;
 
-  const definitions = await db.select().from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
+  const definitions = await listCustomFields({ user, org });
 
   return (
     <div className="space-y-5">

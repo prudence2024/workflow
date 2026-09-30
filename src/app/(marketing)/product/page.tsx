@@ -44,7 +44,7 @@ export default function ProductPage() {
         <SectionHeading
           eyebrow="Product"
           title="One operating system for form-driven processes."
-          description="FormflowOps replaces the spreadsheet-plus-five-tools approach with a single system that manages the complete lifecycle: import, validate, register, submit, track, communicate, remind, and report."
+          description="Workflow replaces the spreadsheet-plus-five-tools approach with a single system that manages the complete lifecycle: import, validate, register, submit, track, communicate, remind, and report."
         />
         <div className="mt-8 flex gap-3">
           <LinkButton href="/signup">Start free</LinkButton>

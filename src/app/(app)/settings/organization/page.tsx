@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
-import { and, desc, eq } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { organizationInvitations, organizationMembers, users } from "@/db/schema";
+import { listPendingInvitations, listWorkspaceMembers } from "@/lib/data";
 import {
   inviteMemberAction,
   removeMemberAction,
@@ -18,6 +16,9 @@ import { SettingsTabs } from "@/components/app/SettingsTabs";
 import { can, ROLE_LABELS } from "@/lib/rbac";
 import { formatDate } from "@/lib/utils";
 
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
+
 export default async function OrganizationSettingsPage({
   searchParams,
 }: {
@@ -29,25 +30,10 @@ export default async function OrganizationSettingsPage({
   if (!org) redirect("/onboarding");
   const { error } = await searchParams;
 
-  const members = await db
-    .select({
-      id: organizationMembers.id,
-      role: organizationMembers.role,
-      userId: users.id,
-      name: users.name,
-      email: users.email,
-      joinedAt: organizationMembers.createdAt,
-    })
-    .from(organizationMembers)
-    .innerJoin(users, eq(organizationMembers.userId, users.id))
-    .where(eq(organizationMembers.orgId, org.orgId))
-    .orderBy(desc(organizationMembers.createdAt));
-
-  const invitations = await db
-    .select()
-    .from(organizationInvitations)
-    .where(and(eq(organizationInvitations.orgId, org.orgId), eq(organizationInvitations.status, "pending")))
-    .orderBy(desc(organizationInvitations.createdAt));
+  const [members, invitations] = await Promise.all([
+    listWorkspaceMembers({ user, org }),
+    listPendingInvitations({ user, org }),
+  ]);
 
   const canManageMembers = can(org.role, "members:manage");
   const canManageOrg = can(org.role, "org:manage");

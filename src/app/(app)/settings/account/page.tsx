@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/Button";
 import { FieldGroup, Input, Label } from "@/components/ui/Field";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
 
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
+
 export default async function AccountSettingsPage({
   searchParams,
 }: {

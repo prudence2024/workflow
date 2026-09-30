@@ -5,6 +5,9 @@ import { FieldGroup, Input, Label } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Surfaces";
 import { getCurrentUser } from "@/lib/auth";
 
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
+
 export default async function OnboardingPage({
   searchParams,
 }: {

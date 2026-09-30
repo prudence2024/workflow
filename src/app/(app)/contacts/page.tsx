@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { and, asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
-import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { contactTags, contacts, tags } from "@/db/schema";
+import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+// Tenant-scoped read: executes as the restricted `workflow_app` role inside a
+// transaction whose organisation context was verified by the database.
+import { listContactsPage } from "@/lib/data";
 import { Card, CardBody, EmptyState } from "@/components/ui/Surfaces";
 import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
@@ -22,6 +22,8 @@ export default async function ContactsPage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const orgs = await getUserOrganizations(user);
+  if (orgs.length === 0) redirect("/onboarding");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
@@ -29,50 +31,22 @@ export default async function ContactsPage({
   const currentPage = Math.max(1, parseInt(page ?? "1", 10) || 1);
   const showArchived = status === "archived";
 
-  const conditions = [eq(contacts.orgId, org.orgId), showArchived ? sql`${contacts.archivedAt} is not null` : isNull(contacts.archivedAt)];
-  if (q) {
-    conditions.push(
-      or(
-        ilike(contacts.firstName, `%${q}%`),
-        ilike(contacts.lastName, `%${q}%`),
-        ilike(contacts.email, `%${q}%`),
-        ilike(contacts.phone, `%${q}%`),
-      )!,
-    );
-  }
-
-  const whereClause = and(...conditions);
-
-  const [totalRow] = await db.select({ value: count() }).from(contacts).where(whereClause);
-  const total = totalRow?.value ?? 0;
+  const { rows, total } = await listContactsPage({ user, org }, {
+    search: q,
+    showArchived,
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+  });
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const rows = await db
-    .select()
-    .from(contacts)
-    .where(whereClause)
-    .orderBy(desc(contacts.createdAt))
-    .limit(PAGE_SIZE)
-    .offset((currentPage - 1) * PAGE_SIZE);
-
-  const contactIds = rows.map((r) => r.id);
-  const tagRows = contactIds.length
-    ? await db
-        .select({ contactId: contactTags.contactId, name: tags.name })
-        .from(contactTags)
-        .innerJoin(tags, eq(contactTags.tagId, tags.id))
-        .where(sql`${contactTags.contactId} in (${sql.join(contactIds.map((id) => sql`${id}`), sql`, `)})`)
-    : [];
-  const tagsByContact = new Map<string, string[]>();
-  for (const t of tagRows) {
-    tagsByContact.set(t.contactId, [...(tagsByContact.get(t.contactId) ?? []), t.name]);
-  }
+  const pageParams = (p: number) =>
+    new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(p) }).toString();
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-[22px] font-semibold text-[var(--color-ink)]">Contacts</h1>
+          <h1 className="font-display text-[22px] font-semibold text-[var(--color-ink)]">Records</h1>
           <p className="mt-0.5 text-[13.5px] text-[var(--color-muted)]">{total.toLocaleString()} {showArchived ? "archived" : "active"} records</p>
         </div>
         <div className="flex gap-2">
@@ -107,12 +81,14 @@ export default async function ContactsPage({
           <>
             <Table>
               <THead>
-                <TH>Name</TH>
-                <TH>Email</TH>
-                <TH>Phone</TH>
-                <TH>Tags</TH>
-                <TH>Status</TH>
-                <TH>Added</TH>
+                <TR>
+                  <TH>Name</TH>
+                  <TH>Email</TH>
+                  <TH>Phone</TH>
+                  <TH>Tags</TH>
+                  <TH>Status</TH>
+                  <TH>Added</TH>
+                </TR>
               </THead>
               <tbody>
                 {rows.map((c) => (
@@ -129,7 +105,7 @@ export default async function ContactsPage({
                     <TD className="text-[var(--color-ink-soft)]">{c.phone ?? "—"}</TD>
                     <TD>
                       <div className="flex flex-wrap gap-1">
-                        {(tagsByContact.get(c.id) ?? []).slice(0, 2).map((t) => (
+                        {c.tags.slice(0, 2).map((t) => (
                           <span key={t} className="rounded-full bg-[var(--color-canvas)] px-2 py-0.5 text-[11px] text-[var(--color-ink-soft)]">
                             {t}
                           </span>
@@ -149,18 +125,10 @@ export default async function ContactsPage({
                 Page {currentPage} of {totalPages}
               </p>
               <div className="flex gap-2">
-                <LinkButton
-                  href={`/contacts?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(Math.max(1, currentPage - 1)) }).toString()}`}
-                  variant="outline"
-                  size="sm"
-                >
+                <LinkButton href={`/contacts?${pageParams(Math.max(1, currentPage - 1))}`} variant="outline" size="sm">
                   Previous
                 </LinkButton>
-                <LinkButton
-                  href={`/contacts?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(Math.min(totalPages, currentPage + 1)) }).toString()}`}
-                  variant="outline"
-                  size="sm"
-                >
+                <LinkButton href={`/contacts?${pageParams(Math.min(totalPages, currentPage + 1))}`} variant="outline" size="sm">
                   Next
                 </LinkButton>
               </div>

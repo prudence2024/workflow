@@ -1,9 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { desc, eq, and } from "drizzle-orm";
-import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { campaignRecords, campaigns, contacts, customFieldDefinitions, messageTemplates } from "@/db/schema";
+import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { getCampaignDetail } from "@/lib/data";
 import {
   analyzeFormAction,
   archiveCampaignAction,
@@ -42,20 +40,25 @@ export default async function CampaignDetailPage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const orgs = await getUserOrganizations(user);
+  if (orgs.length === 0) redirect("/onboarding");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
   const { id } = await params;
   const { error, analyze } = await searchParams;
 
-  const [campaign] = await db.select().from(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.orgId, org.orgId))).limit(1);
-  if (!campaign) notFound();
+  // Tenant-scoped read: campaign, records, templates and custom fields all in
+  // one transaction as the restricted role. A campaign from another workspace
+  // simply resolves to null here (RLS), which becomes a 404.
+  const detail = await getCampaignDetail({ user, org }, id);
+  if (!detail.campaign) notFound();
 
+  const campaign = detail.campaign;
   const fields = (campaign.formDefinition as FormField[]) ?? [];
-  const mapping = (campaign.fieldMapping as Record<string, string>) ?? {};
-  const stats = (campaign.stats as Record<string, number>) ?? {};
+  const mapping = campaign.fieldMapping;
+  const stats = campaign.stats;
 
-  const definitions = await db.select().from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
   const contactFieldOptions = [
     { key: "firstName", label: "First name" },
     { key: "lastName", label: "Last name" },
@@ -63,28 +66,8 @@ export default async function CampaignDetailPage({
     { key: "phone", label: "Phone" },
     { key: "company", label: "Company" },
     { key: "address", label: "Address" },
-    ...definitions.map((d) => ({ key: `custom__${d.key}`, label: d.label })),
+    ...detail.customFields.map((d) => ({ key: `custom__${d.key}`, label: d.label })),
   ];
-
-  const records = await db
-    .select({
-      id: campaignRecords.id,
-      status: campaignRecords.status,
-      resultMessage: campaignRecords.resultMessage,
-      attempts: campaignRecords.attempts,
-      updatedAt: campaignRecords.updatedAt,
-      contactId: contacts.id,
-      firstName: contacts.firstName,
-      lastName: contacts.lastName,
-      email: contacts.email,
-    })
-    .from(campaignRecords)
-    .innerJoin(contacts, eq(campaignRecords.contactId, contacts.id))
-    .where(and(eq(campaignRecords.campaignId, id), eq(campaignRecords.orgId, org.orgId)))
-    .orderBy(desc(campaignRecords.updatedAt))
-    .limit(100);
-
-  const templates = await db.select().from(messageTemplates).where(eq(messageTemplates.orgId, org.orgId));
 
   const total = stats.total ?? 0;
   const hasFailed = (stats.failed ?? 0) > 0;
@@ -218,7 +201,7 @@ export default async function CampaignDetailPage({
           description="Sends to contacts with a successful submission that don't yet have a confirmation logged."
         />
         <CardBody>
-          {templates.length === 0 ? (
+          {detail.templates.length === 0 ? (
             <p className="text-[13px] text-[var(--color-muted)]">
               Create an email template first from <Link href="/templates" className="font-medium text-[var(--color-brand)]">Templates</Link>.
             </p>
@@ -228,7 +211,7 @@ export default async function CampaignDetailPage({
               <FieldGroup className="max-w-xs flex-1">
                 <Label htmlFor="templateId">Template</Label>
                 <Select id="templateId" name="templateId">
-                  {templates.map((t) => (
+                  {detail.templates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
@@ -244,25 +227,27 @@ export default async function CampaignDetailPage({
       </Card>
 
       <Card>
-        <CardHeader title="Records" description={`${records.length} shown`} />
+        <CardHeader title="Records" description={`${detail.records.length} shown`} />
         <CardBody className="p-0">
-          {records.length === 0 ? (
+          {detail.records.length === 0 ? (
             <EmptyState title="No contacts in this campaign yet" description="Add contacts to start queuing submissions." action={<LinkButton href={`/campaigns/${id}/add-contacts`} size="sm">Add contacts</LinkButton>} />
           ) : (
             <Table>
               <THead>
-                <TH>Contact</TH>
-                <TH>Status</TH>
-                <TH>Attempts</TH>
-                <TH>Result</TH>
-                <TH>Updated</TH>
+                <TR>
+                  <TH>Contact</TH>
+                  <TH>Status</TH>
+                  <TH>Attempts</TH>
+                  <TH>Result</TH>
+                  <TH>Updated</TH>
+                </TR>
               </THead>
               <tbody>
-                {records.map((r) => (
+                {detail.records.map((r) => (
                   <TR key={r.id}>
                     <TD>
                       <Link href={`/contacts/${r.contactId}`} className="font-medium text-[var(--color-ink)]">
-                        {r.firstName} {r.lastName}
+                        {r.contactName}
                       </Link>
                       <p className="text-[11.5px] text-[var(--color-muted)]">{r.email ?? "—"}</p>
                     </TD>

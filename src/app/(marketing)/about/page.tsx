@@ -6,7 +6,7 @@ export default function AboutPage() {
       <SectionHeading
         eyebrow="About"
         title="We build operating systems for repetitive, high-stakes form work."
-        description="FormflowOps started from a simple observation: the people running registrations, enrollments, and onboarding for real organizations were stitching together spreadsheets, email tools, and reminder apps that never talked to each other."
+        description="Workflow started from a simple observation: the people running registrations, enrollments, and onboarding for real organizations were stitching together spreadsheets, email tools, and reminder apps that never talked to each other."
       />
       <div className="mt-10 grid gap-6 md:grid-cols-2">
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-6">

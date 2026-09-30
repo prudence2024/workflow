@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { campaigns } from "@/db/schema";
+import { listReportCampaigns } from "@/lib/data";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui/Surfaces";
 import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
@@ -18,7 +16,7 @@ export default async function ReportsPage() {
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
-  const rows = await db.select().from(campaigns).where(eq(campaigns.orgId, org.orgId)).orderBy(desc(campaigns.updatedAt));
+  const rows = await listReportCampaigns({ user, org });
 
   return (
     <div className="space-y-5">
@@ -54,7 +52,7 @@ export default async function ReportsPage() {
             </THead>
             <tbody>
               {rows.map((c) => {
-                const stats = (c.stats as Record<string, number>) ?? {};
+                const stats = c.stats ?? {};
                 const total = stats.total ?? 0;
                 const successful = stats.successful ?? 0;
                 const processed = successful + (stats.failed ?? 0) + (stats.skipped ?? 0);

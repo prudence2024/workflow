@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { SignUp } from "@clerk/nextjs";
 import { signupAction } from "@/app/(auth)/actions";
+import { authMode } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Surfaces";
@@ -10,6 +12,43 @@ export default async function SignupPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
+  const mode = authMode();
+
+  if (mode === "unconfigured") {
+    return (
+      <div>
+        <h1 className="font-display text-[26px] font-semibold text-[var(--color-ink)]">
+          Sign-up unavailable
+        </h1>
+        <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">
+          This deployment has no identity provider configured, so account creation is disabled.
+        </p>
+        <div className="mt-5">
+          <Alert tone="danger">
+            Set <code className="font-mono text-[12px]">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code> and{" "}
+            <code className="font-mono text-[12px]">CLERK_SECRET_KEY</code> to enable sign-up.
+          </Alert>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "clerk") {
+    return (
+      <div>
+        <h1 className="font-display text-[26px] font-semibold text-[var(--color-ink)]">
+          Create your workspace
+        </h1>
+        <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">
+          Free forever for small operations. No card required.
+        </p>
+        <div className="mt-7">
+          <SignUp routing="hash" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1 className="font-display text-[26px] font-semibold text-[var(--color-ink)]">Create your workspace</h1>
@@ -37,7 +76,10 @@ export default async function SignupPage({
         <FieldGroup>
           <Label htmlFor="password">Password</Label>
           <Input id="password" name="password" type="password" placeholder="At least 8 characters" required minLength={8} autoComplete="new-password" />
-          <HelpText>Use at least 8 characters.</HelpText>
+          <HelpText>
+            Development bridge only — password sign-up is disabled in production. Configure Clerk to
+            enable real account creation.
+          </HelpText>
         </FieldGroup>
         <Button type="submit" className="w-full" size="lg">
           Create workspace

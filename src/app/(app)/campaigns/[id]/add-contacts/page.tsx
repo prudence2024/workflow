@@ -1,12 +1,13 @@
 import { notFound, redirect } from "next/navigation";
-import { and, eq, isNull, notInArray } from "drizzle-orm";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { db } from "@/db";
-import { campaignRecords, campaigns, contacts } from "@/db/schema";
+import { getCampaignAudienceCandidates } from "@/lib/data";
 import { addContactsToCampaignAction } from "@/app/(app)/campaigns/actions";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui/Surfaces";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Data";
+
+// Authenticated page: reads session cookies and tenant context at request time.
+export const dynamic = "force-dynamic";
 
 export default async function AddContactsPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -15,23 +16,8 @@ export default async function AddContactsPage({ params }: { params: Promise<{ id
   if (!org) redirect("/onboarding");
 
   const { id } = await params;
-  const [campaign] = await db.select().from(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.orgId, org.orgId))).limit(1);
+  const { campaign, availableContacts } = await getCampaignAudienceCandidates({ user, org }, id);
   if (!campaign) notFound();
-
-  const existing = await db.select({ contactId: campaignRecords.contactId }).from(campaignRecords).where(eq(campaignRecords.campaignId, id));
-  const existingIds = existing.map((e) => e.contactId);
-
-  const availableContacts = await db
-    .select()
-    .from(contacts)
-    .where(
-      and(
-        eq(contacts.orgId, org.orgId),
-        isNull(contacts.archivedAt),
-        existingIds.length > 0 ? notInArray(contacts.id, existingIds) : undefined,
-      ),
-    )
-    .limit(200);
 
   return (
     <div className="space-y-5">

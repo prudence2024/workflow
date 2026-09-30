@@ -1,22 +1,58 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Sora } from "next/font/google";
+import { JetBrains_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const sora = Sora({ subsets: ["latin"], variable: "--font-sora", display: "swap" });
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
+/**
+ * Typography.
+ *
+ * Manrope is the PROVISIONAL companion UI font: the approved board's wordmark
+ * font has not been identified from the supplied PNG, so no public build claims
+ * it. Swap `--font-display` in globals.css once the licensed original is
+ * supplied.
+ */
+const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Formflow Ops — The form operations platform",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3111"),
+  title: {
+    default: "Workflow — All your operations. In flow.",
+    template: "%s · Workflow",
+  },
   description:
-    "Import, validate, submit, track, communicate, and report on every form-driven process from one operational workspace.",
+    "Manage records, automate processes, communicate through bulk email and SMS, organize campaigns, schedule reminders and report on operations — all in one multi-tenant workspace.",
+  applicationName: "Workflow",
+  icons: {
+    icon: "/brand/icon-dark.png",
+  },
+  openGraph: {
+    title: "Workflow — All your operations. In flow.",
+    description: "Connect · Automate · Move Forward",
+    images: ["/brand/workflow-logo.png"],
+  },
 };
 
+/**
+ * Clerk is mounted only when its keys are present. In production a missing key
+ * pair is not a fallback signal — src/lib/auth.ts refuses every session in that
+ * case — so wrapping the tree is purely plumbing, not an auth decision.
+ */
+function clerkConfigured(): boolean {
+  return Boolean(process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+}
+
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return (
-    <html lang="en" className={`${inter.variable} ${sora.variable} ${jetbrainsMono.variable}`}>
+  const tree = (
+    <html lang="en" className={`${manrope.variable} ${jetbrainsMono.variable}`}>
       <body className="bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased">{children}</body>
     </html>
   );
+
+  return clerkConfigured() ? <ClerkProvider>{tree}</ClerkProvider> : tree;
 }
