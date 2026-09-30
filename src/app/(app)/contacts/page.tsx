@@ -81,14 +81,12 @@ export default async function ContactsPage({
           <>
             <Table>
               <THead>
-                <TR>
-                  <TH>Name</TH>
-                  <TH>Email</TH>
-                  <TH>Phone</TH>
-                  <TH>Tags</TH>
-                  <TH>Status</TH>
-                  <TH>Added</TH>
-                </TR>
+                <TH>Name</TH>
+                <TH>Email</TH>
+                <TH>Phone</TH>
+                <TH>Tags</TH>
+                <TH>Status</TH>
+                <TH>Added</TH>
               </THead>
               <tbody>
                 {rows.map((c) => (

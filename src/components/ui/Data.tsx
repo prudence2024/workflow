@@ -108,6 +108,8 @@ export function Table({ children }: { children: ReactNode }) {
   );
 }
 
+// THead renders its own <tr>: pass <TH> cells directly, never a <TR>
+// (a <tr> inside <tr> breaks hydration). Body rows use <TR> inside <tbody>.
 export function THead({ children }: { children: ReactNode }) {
   return (
     <thead>

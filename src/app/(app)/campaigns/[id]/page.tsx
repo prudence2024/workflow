@@ -234,13 +234,11 @@ export default async function CampaignDetailPage({
           ) : (
             <Table>
               <THead>
-                <TR>
-                  <TH>Contact</TH>
-                  <TH>Status</TH>
-                  <TH>Attempts</TH>
-                  <TH>Result</TH>
-                  <TH>Updated</TH>
-                </TR>
+                <TH>Contact</TH>
+                <TH>Status</TH>
+                <TH>Attempts</TH>
+                <TH>Result</TH>
+                <TH>Updated</TH>
               </THead>
               <tbody>
                 {detail.records.map((r) => (

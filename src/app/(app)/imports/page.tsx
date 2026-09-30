@@ -41,15 +41,13 @@ export default async function ImportsPage() {
         ) : (
           <Table>
             <THead>
-              <TR>
-                <TH>File</TH>
-                <TH>Rows</TH>
-                <TH>Valid</TH>
-                <TH>Invalid</TH>
-                <TH>Duplicate</TH>
-                <TH>Status</TH>
-                <TH>Uploaded</TH>
-              </TR>
+              <TH>File</TH>
+              <TH>Rows</TH>
+              <TH>Valid</TH>
+              <TH>Invalid</TH>
+              <TH>Duplicate</TH>
+              <TH>Status</TH>
+              <TH>Uploaded</TH>
             </THead>
             <tbody>
               {rows.map((imp) => (

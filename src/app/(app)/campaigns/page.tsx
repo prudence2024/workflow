@@ -38,13 +38,11 @@ export default async function CampaignsPage() {
         ) : (
           <Table>
             <THead>
-              <TR>
-                <TH>Campaign</TH>
-                <TH>Type</TH>
-                <TH>Progress</TH>
-                <TH>Status</TH>
-                <TH>Updated</TH>
-              </TR>
+              <TH>Campaign</TH>
+              <TH>Type</TH>
+              <TH>Progress</TH>
+              <TH>Status</TH>
+              <TH>Updated</TH>
             </THead>
             <tbody>
               {rows.map((c) => {

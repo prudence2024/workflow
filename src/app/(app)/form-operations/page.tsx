@@ -89,16 +89,14 @@ export default async function FormOperationsPage() {
         ) : (
           <Table>
             <THead>
-              <TR>
-                <TH>Campaign</TH>
-                <TH>Status</TH>
-                <TH>Fields</TH>
-                <TH>Mapped</TH>
-                <TH>Successful</TH>
-                <TH>Needs attention</TH>
-                <TH>Updated</TH>
-                <TH>{""}</TH>
-              </TR>
+              <TH>Campaign</TH>
+              <TH>Status</TH>
+              <TH>Fields</TH>
+              <TH>Mapped</TH>
+              <TH>Successful</TH>
+              <TH>Needs attention</TH>
+              <TH>Updated</TH>
+              <TH>{""}</TH>
             </THead>
             <tbody>
               {overview.campaigns.map((c) => (
@@ -157,14 +155,12 @@ export default async function FormOperationsPage() {
           ) : (
             <Table>
               <THead>
-                <TR>
-                  <TH>Contact</TH>
-                  <TH>Campaign</TH>
-                  <TH>Status</TH>
-                  <TH>Attempts</TH>
-                  <TH>Reason</TH>
-                  <TH>Since</TH>
-                </TR>
+                <TH>Contact</TH>
+                <TH>Campaign</TH>
+                <TH>Status</TH>
+                <TH>Attempts</TH>
+                <TH>Reason</TH>
+                <TH>Since</TH>
               </THead>
               <tbody>
                 {overview.attention.map((r) => (

@@ -268,15 +268,13 @@ export default async function CommunicationsPage({
         ) : (
           <Table>
             <THead>
-              <TR>
-                <TH>Event</TH>
-                <TH>Recipient</TH>
-                <TH>Status</TH>
-                <TH>Attempts</TH>
-                <TH>Detail</TH>
-                <TH>Created</TH>
-                <TH>{""}</TH>
-              </TR>
+              <TH>Event</TH>
+              <TH>Recipient</TH>
+              <TH>Status</TH>
+              <TH>Attempts</TH>
+              <TH>Detail</TH>
+              <TH>Created</TH>
+              <TH>{""}</TH>
             </THead>
             <tbody>
               {outbox.rows.map((row) => (
@@ -342,13 +340,11 @@ export default async function CommunicationsPage({
           ) : (
             <Table>
               <THead>
-                <TR>
-                  <TH>Recipient</TH>
-                  <TH>Channel</TH>
-                  <TH>Status</TH>
-                  <TH>Provider evidence</TH>
-                  <TH>When</TH>
-                </TR>
+                <TH>Recipient</TH>
+                <TH>Channel</TH>
+                <TH>Status</TH>
+                <TH>Provider evidence</TH>
+                <TH>When</TH>
               </THead>
               <tbody>
                 {messages.map((m) => (
