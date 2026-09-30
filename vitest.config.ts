@@ -6,6 +6,8 @@ export default defineConfig({
   // React Server Component context. Tests stub it; production keeps the guard.
   resolve: {
     alias: {
+      // Mirror the tsconfig "@/*" -> "./src/*" path mapping for tests.
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
       "server-only": fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)),
     },
   },
