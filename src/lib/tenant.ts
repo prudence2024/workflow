@@ -17,42 +17,100 @@ import { db } from "@/db";
  */
 export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/**
+ * How a request has been identified.
+ *
+ * Both variants are only ever constructed from something the server verified: a
+ * Clerk subject from a signed session, or a session token read from an httpOnly
+ * cookie and re-verified inside the database.
+ */
+export type Identity =
+  | { kind: "clerk"; clerkUserId: string }
+  | { kind: "legacy"; sessionToken: string };
+
+async function beginSession(tx: TenantTx, identity: Identity): Promise<void> {
+  if (identity.kind === "clerk") {
+    await tx.execute(sql`select app.begin_user_session(${identity.clerkUserId})`);
+    return;
+  }
+  // Verified by the database, never asserted by the caller.
+  await tx.execute(sql`select app.begin_legacy_session(${identity.sessionToken})`);
+}
+
 export async function withUserSession<T>(
-  clerkUserId: string,
+  identity: Identity,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select app.begin_user_session(${clerkUserId})`);
+    await beginSession(tx, identity);
     return fn(tx);
   });
 }
 
+/**
+ * THE sanctioned way to read or write customer data.
+ *
+ * Order matters and is not interchangeable:
+ *   1. establish a verified identity,
+ *   2. prove active membership of the requested organisation (42501 otherwise),
+ *   3. drop to `workflow_app`, which has NO bypassrls — so row level security
+ *      stops being advisory and becomes the enforcement point.
+ */
 export async function withTenant<T>(
-  clerkUserId: string,
+  identity: Identity,
   orgId: string,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select app.begin_user_session(${clerkUserId})`);
-    // Raises 42501 when the identity is not an active member of this workspace.
+    await beginSession(tx, identity);
     await tx.execute(sql`select app.set_tenant_context(${orgId}::uuid)`);
     await tx.execute(sql`set local role workflow_app`);
     return fn(tx);
   });
 }
 
-/** Run a privileged function (definer path) without dropping to the app role. */
+/** Privileged (SECURITY DEFINER) path — bootstrap and admin calls only. */
+export async function withPrivilegedContext<T>(
+  identity: Identity,
+  orgId: string | null,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await beginSession(tx, identity);
+    if (orgId) await tx.execute(sql`select app.set_tenant_context(${orgId}::uuid)`);
+    return fn(tx);
+  });
+}
+
+/**
+ * Run a privileged (SECURITY DEFINER) function without dropping to the app role.
+ * Kept for bootstrap and administration. Customer-facing reads must use
+ * withTenant() instead.
+ */
 export async function withUserContext<T>(
   clerkUserId: string,
   orgId: string | null,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select app.begin_user_session(${clerkUserId})`);
-    if (orgId) {
-      await tx.execute(sql`select app.set_tenant_context(${orgId}::uuid)`);
-    }
-    return fn(tx);
+  return withPrivilegedContext({ kind: "clerk", clerkUserId }, orgId, fn);
+}
+
+/**
+ * Provision a workspace through the database function that atomically creates
+ * the organisation, its owner membership, its subscription and the audit trail.
+ * Slug collisions are resolved inside the function, so the caller never races.
+ * Works for both a Clerk subject and a freshly-minted legacy session token.
+ */
+export async function createOrganizationForIdentity(
+  identity: Identity,
+  name: string,
+  slugBase: string,
+): Promise<string> {
+  return withUserSession(identity, async (tx) => {
+    const rows = await tx.execute<{ id: string }>(
+      sql`select app.create_organization(${name}, ${slugBase}) as id`,
+    );
+    return rows.rows[0].id;
   });
 }
 
@@ -61,12 +119,7 @@ export async function createOrganizationForCurrentUser(
   name: string,
   slugBase: string,
 ): Promise<string> {
-  return withUserContext(clerkUserId, null, async (tx) => {
-    const rows = await tx.execute<{ id: string }>(
-      sql`select app.create_organization(${name}, ${slugBase}) as id`,
-    );
-    return rows.rows[0].id;
-  });
+  return createOrganizationForIdentity({ kind: "clerk", clerkUserId }, name, slugBase);
 }
 
 export async function listOrganizationsForCurrentUser(clerkUserId: string) {

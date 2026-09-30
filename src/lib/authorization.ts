@@ -1,6 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
-import { withTenant, withUserContext, type TenantTx } from "@/lib/tenant";
+import { withTenant, withUserContext, type Identity, type TenantTx } from "@/lib/tenant";
 
 /**
  * Application authorization.
@@ -149,14 +149,14 @@ export async function withAuthorizedTenant<T>(
   if (!(await hasPermission(clerkUserId, orgId, permission))) {
     throw new AuthorizationError(`Missing permission: ${permission}`, "forbidden", permission);
   }
-  return withTenant(clerkUserId, orgId, fn);
+  return withTenant({ kind: "clerk", clerkUserId }, orgId, fn);
 }
 
 /** Read-only tenant access when a specific permission is not required. */
 export async function withTenantRead<T>(
-  clerkUserId: string,
+  identity: Identity,
   orgId: string,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
-  return withTenant(clerkUserId, orgId, fn);
+  return withTenant(identity, orgId, fn);
 }

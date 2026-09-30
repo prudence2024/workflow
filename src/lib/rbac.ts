@@ -27,7 +27,9 @@ export type Permission =
   | "imports:write"
   | "templates:write"
   | "reports:export"
-  | "settings:write";
+  | "settings:write"
+  /** Added in migration 0007 — distinct from editing records. */
+  | "messages:send";
 
 const PERMISSIONS_BY_ROLE: Record<Role, Permission[]> = {
   owner: [
@@ -42,6 +44,7 @@ const PERMISSIONS_BY_ROLE: Record<Role, Permission[]> = {
     "templates:write",
     "reports:export",
     "settings:write",
+    "messages:send",
   ],
   admin: [
     "members:manage",
@@ -53,6 +56,7 @@ const PERMISSIONS_BY_ROLE: Record<Role, Permission[]> = {
     "templates:write",
     "reports:export",
     "settings:write",
+    "messages:send",
   ],
   manager: [
     "contacts:write",
@@ -61,6 +65,7 @@ const PERMISSIONS_BY_ROLE: Record<Role, Permission[]> = {
     "imports:write",
     "templates:write",
     "reports:export",
+    "messages:send",
   ],
   member: ["contacts:write", "imports:write"],
   viewer: [],

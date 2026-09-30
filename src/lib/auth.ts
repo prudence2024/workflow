@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { sessions, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { newToken } from "@/lib/id";
-import { withUserContext } from "@/lib/tenant";
+import { withUserContext, withUserSession, type Identity } from "@/lib/tenant";
 import type { Role } from "@/lib/rbac";
 
 const SESSION_COOKIE = "fops_session";
@@ -27,6 +27,30 @@ export function isClerkConfigured(): boolean {
   return Boolean(process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 }
 
+/**
+ * Which identity path this process is permitted to use.
+ *
+ *  - "clerk"        Clerk is configured and owns credentials.
+ *  - "legacy"       Clerk is absent and we are NOT in production: the
+ *                   transitional password bridge, so the app is exercisable on
+ *                   a developer machine. Never available in production.
+ *  - "unconfigured" Clerk is absent in production. Every request is treated as
+ *                   unauthenticated. This is deliberate: a production
+ *                   deployment must fail closed rather than silently fall back
+ *                   to password sessions.
+ */
+export type AuthMode = "clerk" | "legacy" | "unconfigured";
+
+export function authMode(): AuthMode {
+  if (isClerkConfigured()) return "clerk";
+  return process.env.NODE_ENV === "production" ? "unconfigured" : "legacy";
+}
+
+/** True only for the non-production transitional bridge. */
+export function legacyAuthAllowed(): boolean {
+  return authMode() === "legacy";
+}
+
 export type CurrentUser = {
   id: string;
   email: string;
@@ -36,6 +60,12 @@ export type CurrentUser = {
   emailVerified: boolean;
   /** Present for Clerk-managed identities; null for legacy bridge sessions. */
   clerkUserId: string | null;
+  /**
+   * Transitional: the pre-Clerk session token, needed so the tenant gateway can
+   * have the database verify it. Null once Clerk manages the identity. Never
+   * send this value to a browser or a log.
+   */
+  legacySessionToken: string | null;
 };
 
 async function resolveClerkSubject(): Promise<string | null> {
@@ -94,7 +124,12 @@ export async function isPlatformAdminSubject(clerkUserId: string): Promise<boole
 }
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  if (isClerkConfigured()) {
+  const mode = authMode();
+
+  // Production without Clerk credentials: refuse to authenticate anyone.
+  if (mode === "unconfigured") return null;
+
+  if (mode === "clerk") {
     const subject = await resolveClerkSubject();
     if (!subject) return null;
 
@@ -108,10 +143,31 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       isPlatformAdmin: await isPlatformAdminSubject(subject),
       emailVerified: true,
       clerkUserId: subject,
+      legacySessionToken: null,
     };
   }
 
   return getLegacySessionUser();
+}
+
+/**
+ * Revoke whatever credential this request presented. Used by the logout action
+ * so a Clerk session is actually terminated rather than only the local cookie.
+ */
+export async function signOutCurrentIdentity(user: CurrentUser | null): Promise<void> {
+  if (user?.clerkUserId) {
+    try {
+      const { auth, clerkClient } = await import("@clerk/nextjs/server");
+      const session = await auth();
+      if (session?.sessionId) {
+        const client = await clerkClient();
+        await client.sessions.revokeSession(session.sessionId);
+      }
+    } catch {
+      // Fall through to cookie cleanup; the local session is cleared regardless.
+    }
+  }
+  await destroySession();
 }
 
 /** Transitional bridge: pre-Clerk password sessions. Removable after migration. */
@@ -148,7 +204,24 @@ async function getLegacySessionUser(): Promise<CurrentUser | null> {
     isPlatformAdmin: row.isPlatformAdmin,
     emailVerified: row.emailVerified,
     clerkUserId: null,
+    legacySessionToken: token,
   };
+}
+
+/**
+ * Turn a resolved user into the identity the tenant gateway accepts. Chooses the
+ * strictest available proof: a Clerk subject when present, otherwise the session
+ * token the database will verify.
+ */
+export function identityOf(user: CurrentUser): Identity {
+  if (user.clerkUserId) return { kind: "clerk", clerkUserId: user.clerkUserId };
+  if (user.legacySessionToken) return { kind: "legacy", sessionToken: user.legacySessionToken };
+  // No verifiable identity: callers must treat this as unauthenticated.
+  throw new Error("no verifiable identity for the current request");
+}
+
+export function hasVerifiableIdentity(user: CurrentUser): boolean {
+  return Boolean(user.clerkUserId || user.legacySessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,11 +233,23 @@ async function getLegacySessionUser(): Promise<CurrentUser | null> {
 // application never trusts a browser-supplied organisation id.
 // ---------------------------------------------------------------------------
 
-export type OrgLookup = CurrentUser | { id: string; clerkUserId?: string | null } | string;
+export type OrgLookup =
+  | CurrentUser
+  | { id: string; clerkUserId?: string | null; legacySessionToken?: string | null }
+  | string;
 
-function lookup(lookupValue: OrgLookup): { id?: string; clerkUserId?: string | null } {
-  if (typeof lookupValue === "string") return { id: lookupValue };
-  return { id: lookupValue.id, clerkUserId: lookupValue.clerkUserId ?? null };
+function lookup(lookupValue: OrgLookup): { id?: string; identity: Identity | null } {
+  if (typeof lookupValue === "string") return { id: lookupValue, identity: null };
+  if (lookupValue.clerkUserId) {
+    return { id: lookupValue.id, identity: { kind: "clerk", clerkUserId: lookupValue.clerkUserId } };
+  }
+  if (lookupValue.legacySessionToken) {
+    return {
+      id: lookupValue.id,
+      identity: { kind: "legacy", sessionToken: lookupValue.legacySessionToken },
+    };
+  }
+  return { id: lookupValue.id, identity: null };
 }
 
 export type OrgMembership = {
@@ -175,8 +260,12 @@ export type OrgMembership = {
   role: Role;
 };
 
-async function membershipsFromDatabase(clerkUserId: string): Promise<OrgMembership[]> {
-  const rows = await withUserContext(clerkUserId, null, async (tx) => {
+async function membershipsFromIdentity(identity: Identity): Promise<OrgMembership[]> {
+  // Both routes go through app.user_organizations(), which resolves the caller
+  // from the identity the database itself established (app.current_user_id()).
+  // Application code never supplies a user id here, so a bug in this file
+  // cannot widen a user's access to another workspace.
+  const rows = await withUserSession(identity, async (tx) => {
     const result = await tx.execute<{
       org_id: string;
       org_name: string;
@@ -196,37 +285,10 @@ async function membershipsFromDatabase(clerkUserId: string): Promise<OrgMembersh
   }));
 }
 
-async function membershipsFromLegacy(userId: string): Promise<OrgMembership[]> {
-  const rows = await db.execute<{
-    org_id: string;
-    org_name: string;
-    org_slug: string;
-    plan_key: string;
-    role_key: string;
-  }>(sql`
-    select o.id as org_id, o.name as org_name, o.slug as org_slug, o.plan_key,
-           coalesce(r.key, m.role) as role_key
-      from public.organization_members m
-      join public.organizations o on o.id = m.org_id
-      left join public.roles r on r.id = m.role_id
-     where m.user_id = ${userId}::uuid and m.status = 'active'
-     order by o.created_at
-  `);
-
-  return rows.rows.map((r) => ({
-    orgId: r.org_id,
-    orgName: r.org_name,
-    orgSlug: r.org_slug,
-    planKey: r.plan_key,
-    role: r.role_key as Role,
-  }));
-}
-
 export async function getUserOrganizations(user: OrgLookup): Promise<OrgMembership[]> {
-  const { id, clerkUserId } = lookup(user);
-  if (clerkUserId) return membershipsFromDatabase(clerkUserId);
-  if (!id) return [];
-  return membershipsFromLegacy(id);
+  const { identity } = lookup(user);
+  if (!identity) return [];
+  return membershipsFromIdentity(identity);
 }
 
 export async function setCurrentOrgCookie(orgId: string) {
