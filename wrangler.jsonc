@@ -1,0 +1,26 @@
+{
+  // Cloudflare Workers preview scaffold — DEVELOPMENT branch, TEST credentials only.
+  //
+  // STATUS: scaffold only. A Workers deploy is BLOCKED on the database-driver
+  // migration (see docs/CLOUDFLARE-PREVIEW.md): src/db uses drizzle-orm/node-postgres
+  // + pg (TCP), which cannot run on Workers. Do not point this at production.
+  "$schema": "https://developers.cloudflare.com/schemas/config/wrangler.jsonc",
+  "name": "workflow-preview",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://workflow-preview.example.test",
+    "NEON_BRANCH": "development",
+    "CLERK_AUTHORIZED_PARTIES": "https://workflow-preview.example.test",
+    "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
+    "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
+  }
+  // Secrets (set with `wrangler secret put`, NEVER in this file):
+  //   DATABASE_URL (pooled Neon DEVELOPMENT endpoint)
+  //   DATABASE_URL_UNPOOLED (direct Neon DEVELOPMENT endpoint, migrations only)
+  //   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (pk_test_…)
+  //   CLERK_SECRET_KEY (sk_test_…)
+  //   WORKER_SECRET, RESEND_*, TERMII_*, TELEGRAM_*, R2_* (test credentials only)
+}

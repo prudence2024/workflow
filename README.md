@@ -135,18 +135,24 @@ Confirmed on this development branch, with the commands noted:
 These are designed and partially coded, but **not verified end to end** because
 the local environment has no provider credentials:
 
-- **Clerk provider / middleware.** `@clerk/nextjs` is installed and `auth.ts`
-  bridges Clerk subjects to local profiles, but no `ClerkProvider`,
-  `middleware.ts`, or hosted sign-in is wired. Sign-in currently uses the
-  transitional password flow so the app can be exercised without keys.
+- **Clerk keys.** `@clerk/nextjs` is installed, `src/proxy.ts` mounts
+  `clerkMiddleware()` when keys exist, and `/login` + `/signup` render
+  Clerk's hosted components (`routing="hash"`) in `clerk` mode with a
+  fail-closed `unconfigured` mode in production. No test/production keys
+  are configured yet, so development still uses the transitional password
+  bridge. Setup + verification checklist: `docs/CLERK.md`.
 - **Live email/SMS delivery.** The outbox, idempotency, consent/suppression and
   webhook verification are tested; actual Resend/Termii dispatch needs keys.
 - **R2 storage.** The R2/SigV4 driver exists and refuses a silent local fallback
   in production; without R2 credentials, development uses the local driver.
 - **Telegram ops bot.** `/status`, `/health`, `/usage`, `/failed` handlers and
   the fail-closed allowlist are tested; wiring a real bot token is pending.
-- **Cloudflare Workers preview** (OpenNext + `wrangler.jsonc`) and
-  **Trigger.dev** scheduling — not scaffolded in this branch yet.
+- **Cloudflare Workers preview.** `wrangler.jsonc` is scaffolded
+  (development vars only, secrets via `wrangler secret put`), but a Workers
+  deploy is blocked on migrating `src/db` from `pg` (TCP) to the Neon HTTP
+  driver — tracked as its own task in `docs/CLOUDFLARE-PREVIEW.md`.
+  **Trigger.dev** scheduling is not integrated; the worker outbox route is
+  ready to be driven by any cron/Trigger job (`docs/PROVIDERS.md`).
 
 ---
 
