@@ -4,29 +4,34 @@
 -- These keys and their role mappings mirror the permission matrix already
 -- shipped in src/lib/rbac.ts, so database-driven authorization preserves the
 -- existing product behaviour instead of redefining it.
+--
+-- Ids are supplied explicitly with gen_random_uuid() rather than relying on a
+-- column default: this migration must be order-independent, because relying on
+-- the default (added by a later migration) made it fail on a fresh database,
+-- and that failure was silently swallowed by the migration tool.
 -- Idempotent: safe to re-run on any branch.
 -- ============================================================================
 
-insert into public.roles (key, name, description, is_system) values
-  ('owner',   'Owner',         'Full workspace control including billing, team and workspace settings.', true),
-  ('admin',   'Administrator', 'Manages members, records, campaigns and communications. No billing access.', true),
-  ('manager', 'Manager',       'Runs campaigns, imports, templates and reports.', true),
-  ('member',  'Member',        'Creates and edits records and runs imports.', true),
-  ('viewer',  'Viewer',        'Read-only access to workspace data.', true)
+insert into public.roles (id, key, name, description, is_system) values
+  (gen_random_uuid(), 'owner',   'Owner',         'Full workspace control including billing, team and workspace settings.', true),
+  (gen_random_uuid(), 'admin',   'Administrator', 'Manages members, records, campaigns and communications. No billing access.', true),
+  (gen_random_uuid(), 'manager', 'Manager',       'Runs campaigns, imports, templates and reports.', true),
+  (gen_random_uuid(), 'member',  'Member',        'Creates and edits records and runs imports.', true),
+  (gen_random_uuid(), 'viewer',  'Viewer',        'Read-only access to workspace data.', true)
 on conflict (key) do nothing;
 
-insert into public.permissions (key, name, description) values
-  ('org:manage',       'Manage workspace',   'Rename and configure the workspace'),
-  ('org:billing',      'Manage billing',     'Change plan and payment details'),
-  ('members:manage',   'Manage members',     'Invite members and change roles'),
-  ('contacts:write',   'Write records',      'Create and edit records'),
-  ('contacts:delete',  'Delete records',     'Delete or archive records'),
-  ('campaigns:write',  'Write campaigns',    'Create and edit campaigns'),
-  ('campaigns:run',    'Run campaigns',      'Start, pause and retry campaigns'),
-  ('imports:write',    'Run imports',        'Upload, map and commit imports'),
-  ('templates:write',  'Write templates',    'Create and edit message templates'),
-  ('reports:export',   'Export reports',     'Export workspace reports'),
-  ('settings:write',   'Write settings',     'Change workspace settings and custom fields')
+insert into public.permissions (id, key, name, description) values
+  (gen_random_uuid(), 'org:manage',       'Manage workspace',   'Rename and configure the workspace'),
+  (gen_random_uuid(), 'org:billing',      'Manage billing',     'Change plan and payment details'),
+  (gen_random_uuid(), 'members:manage',   'Manage members',     'Invite members and change roles'),
+  (gen_random_uuid(), 'contacts:write',   'Write records',      'Create and edit records'),
+  (gen_random_uuid(), 'contacts:delete',  'Delete records',     'Delete or archive records'),
+  (gen_random_uuid(), 'campaigns:write',  'Write campaigns',    'Create and edit campaigns'),
+  (gen_random_uuid(), 'campaigns:run',    'Run campaigns',      'Start, pause and retry campaigns'),
+  (gen_random_uuid(), 'imports:write',    'Run imports',        'Upload, map and commit imports'),
+  (gen_random_uuid(), 'templates:write',  'Write templates',    'Create and edit message templates'),
+  (gen_random_uuid(), 'reports:export',   'Export reports',     'Export workspace reports'),
+  (gen_random_uuid(), 'settings:write',   'Write settings',     'Change workspace settings and custom fields')
 on conflict (key) do nothing;
 
 with matrix(role_key, perm_key) as (values

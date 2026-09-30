@@ -43,6 +43,20 @@
       "when": 1790211663026,
       "tag": "0005_permission_key_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790729769624,
+      "tag": "0006_legacy_session_and_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790729777535,
+      "tag": "0007_messages_send_permission",
+      "breakpoints": true
     }
   ]
 }
