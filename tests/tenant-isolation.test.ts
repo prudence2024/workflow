@@ -323,7 +323,9 @@ suite("tenant isolation (real PostgreSQL)", () => {
     const ownerPerms = await asTenantWithContext(clerk.ownerA, orgA, async (c) =>
       (await c.query("select app.current_permissions() as key")).rows.map((r) => r.key),
     );
-    expect(ownerPerms.length).toBe(11);
+    // 0007 added messages:send for owner/admin/manager (11 -> 12 for owners).
+    expect(ownerPerms.length).toBe(12);
+    expect(new Set(ownerPerms).has("messages:send")).toBe(true);
 
     const dualPerms = await asTenantWithContext(clerk.dual, orgA, async (c) =>
       (await c.query("select app.current_permissions() as key")).rows.map((r) => r.key),
