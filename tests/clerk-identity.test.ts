@@ -51,15 +51,20 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!hasDatabase) return;
-  // Remove every fixture row this suite created, in FK-safe order.
+  // Remove every fixture row this suite created, in FK-safe order. The
+  // clerk_test_ prefix (never the run suffix) is the match so reruns with a
+  // new suffix still collect fixtures leaked by earlier runs.
   await owner
-    .query(`delete from public.platform_admins where clerk_user_id like 'clerk_test_%_${suffix}'`)
+    .query(`delete from public.platform_admins where clerk_user_id like 'clerk_test_%'`)
     .catch(() => {});
   await owner
-    .query(`delete from public.sessions where user_id = any(select id from public.users where clerk_user_id like 'clerk_test_%_${suffix}' or email like '%_${suffix}@test.local')`)
+    .query(`delete from public.audit_logs where user_id = any(select id from public.users where clerk_user_id like 'clerk_test_%' or email like '%@test.local')`)
     .catch(() => {});
   await owner
-    .query(`delete from public.users where clerk_user_id like 'clerk_test_%_${suffix}' or email like '%_${suffix}@test.local'`)
+    .query(`delete from public.sessions where user_id = any(select id from public.users where clerk_user_id like 'clerk_test_%' or email like '%@test.local')`)
+    .catch(() => {});
+  await owner
+    .query(`delete from public.users where clerk_user_id like 'clerk_test_%' or email like '%@test.local'`)
     .catch(() => {});
   await owner.end().catch(() => {});
   void createdUserIds;
