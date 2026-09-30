@@ -1,0 +1,51 @@
+# Workflow CI — verification only, never migrates production.
+#
+# What runs on every push / pull request:
+#   1. npm ci (clean, reproducible install)
+#   2. typecheck (tsc --noEmit)
+#   3. non-destructive tests (webhook + telegram suites, no database)
+#   4. production build (next build, no runtime secrets required)
+#
+# What CI NEVER does:
+#   - never runs `node scripts/db-migrate.mjs` (apply) or drizzle-kit migrate
+#   - never runs `node scripts/seed-demo.mjs`
+#   - never touches Neon production (no DATABASE_URL secrets are configured
+#     here at all; database-backed suites run on developer machines against
+#     the Neon development branch only)
+#
+# Database-backed suites (tenant-isolation, outbox-idempotency) are
+# intentionally excluded from CI: they require a live Neon development
+# branch and create/remove their own fixtures. Run them locally with
+# DATABASE_URL_UNPOOLED pointed at development (see README quick start).
+#
+# Migration and rollback procedure lives in docs/MIGRATIONS.md.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (clean)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Non-destructive tests (no database)
+        run: npx vitest run tests/webhook-signature.test.ts tests/telegram-allowlist.test.ts
+
+      - name: Production build
+        run: npm run build
