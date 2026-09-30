@@ -15,13 +15,19 @@ coverage/
 # Local upload stand-in (replaced by R2 in production)
 storage/
 
-# Tooling / OS
+# Tooling / OS / transient run logs
 .vercel
 .DS_Store
 Thumbs.db
 desktop.ini
 *.tsbuildinfo
+*.log
 next-env.d.ts
 
-# Local Neon CLI context
-.neon/
+# Local Neon CLI context (file, not directory)
+.neon
+.freebuff/
+
+# Cross-project audit dumps and handoff zips live on disk only;
+# they are never part of the workflow repository.
+audit/
