@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { desc, sql } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { claimPlatformAdmin } from "@/lib/authorization";
 // Intentionally privileged: this operator console is the ONE customer-app route
 // that reads across tenants. Access is gated by isPlatformAdmin, which is
 // resolved from the database allowlist (app.is_platform_admin_user) — never from
@@ -17,7 +18,19 @@ export const dynamic = "force-dynamic";
 export default async function PlatformAdminPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!user.isPlatformAdmin) redirect("/dashboard");
+  // First-visit bootstrap: the allowlisted subject claims administration
+  // here. claimPlatformAdmin only succeeds when the verified subject matches
+  // the server-configured allowlist (the database compares them and raises
+  // 42501 otherwise), so this cannot be spoofed into an escalation.
+  let admin = user.isPlatformAdmin;
+  if (!admin && user.clerkUserId) {
+    try {
+      admin = await claimPlatformAdmin(user.clerkUserId, user.email);
+    } catch {
+      admin = false;
+    }
+  }
+  if (!admin) redirect("/dashboard");
 
   const [[orgCount], [userCount], [campaignCount], [contactCount], [failedJobs], [emailCount]] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(organizations),
