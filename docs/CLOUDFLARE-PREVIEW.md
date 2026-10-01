@@ -67,7 +67,7 @@ npx opennextjs-cloudflare deploy  # preview environment, never production
 | webhook routes | ✅ unsigned/forged rejected 401; signed accepted; replay deduped |
 | worker routes | ✅ no secret → 401; honest tally with secret (code + idempotency suite) |
 | Worker bundle (`opennextjs-cloudflare build`) | ✅ exit 0, `.open-next/worker.js` produced (local Windows needs no symlink privilege: junctions used by the local-only build-tool patch, never committed) |
-| Local workerd preview | ✅ boots with edge vars bound; `/api/health`, `/`, `/pricing`, `/login`, `/signup`, `/product` all 200; `/login` fail-closed without Clerk keys |
+| Local workerd preview | ✅ boots with edge vars bound; `/api/health`, `/`, `/pricing`, `/login`, `/signup`, `/product` all 200; `/login` fail-closed without Clerk keys; client chunks + CSS 200 via the `ASSETS` binding (without it every hashed asset 404s and pages ship unhydrated) |
 | Cloudflare-hosted URL | ❌ blocked: needs dashboard secrets (dev Neon URL, Clerk test keys) + someone with account access to read the Preview build result |
 
 P6 hosted checks (scripts/hosted-security-check.mjs, 11/11) ran against

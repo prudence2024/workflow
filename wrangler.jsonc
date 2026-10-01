@@ -11,6 +11,13 @@
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Workers Static Assets: serves the OpenNext client chunks, CSS and images
+  // built into .open-next/assets. Without this binding every hashed client
+  // asset 404s and pages render without hydration or styling.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
   "vars": {
     // Selects the Neon WebSocket transport in src/db (TCP does not exist on
     // Workers). Node runtimes (dev, scripts, tests, migrations) ignore it.
