@@ -1,8 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { newId } from "@/lib/id";
+// NOTE: no node:fs / node:path imports here on purpose. The filesystem is
+// only reachable through the local dev driver, which lazy-loads those
+// modules at call time — a static import would break Cloudflare Workers,
+// where the module graph must stay free of filesystem access.
 import { EMPTY_PAYLOAD_SHA256, payloadSha256, signRequest } from "@/lib/sigv4";
 
 /**
@@ -50,7 +52,14 @@ export function activeDriver(): StorageDriver {
   return "local";
 }
 
-const LOCAL_ROOT = path.join(process.cwd(), ".storage", "uploads");
+/** Filesystem access, loaded only when the local dev driver actually runs. */
+async function localFs() {
+  const [{ mkdir, readFile, writeFile }, { default: path }] = await Promise.all([
+    import("node:fs/promises"),
+    import("node:path"),
+  ]);
+  return { mkdir, readFile, writeFile, root: path.join(process.cwd(), ".storage", "uploads"), path };
+}
 
 /** Tenant-prefixed key so one workspace can never address another's object. */
 function objectKey(orgId: string, fileName: string): string {
@@ -72,7 +81,8 @@ export async function saveBuffer(
     return { key, sizeBytes: data.byteLength, driver };
   }
 
-  const full = path.join(LOCAL_ROOT, key);
+  const { mkdir, writeFile, root, path } = await localFs();
+  const full = path.join(root, key);
   await mkdir(path.dirname(full), { recursive: true });
   await writeFile(full, data);
   return { key, sizeBytes: data.byteLength, driver };
@@ -84,7 +94,8 @@ export async function readStoredFile(key: string): Promise<Buffer> {
     const res = await r2Request("GET", key);
     return Buffer.from(await res.arrayBuffer());
   }
-  return readFile(path.join(LOCAL_ROOT, key));
+  const { readFile, root, path } = await localFs();
+  return readFile(path.join(root, key));
 }
 
 export async function deleteStoredFile(key: string): Promise<void> {
@@ -257,7 +268,6 @@ export function cloudinarySignature(
   params: Record<string, string | number>,
   apiSecret: string,
 ): string {
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   const toSign = Object.keys(params)
     .sort()
     .map((k) => `${k}=${params[k]}`)

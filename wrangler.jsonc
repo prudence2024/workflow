@@ -1,9 +1,10 @@
 {
   // Cloudflare Workers preview scaffold — DEVELOPMENT branch, TEST credentials only.
   //
-  // STATUS: scaffold only. A Workers deploy is BLOCKED on the database-driver
-  // migration (see docs/CLOUDFLARE-PREVIEW.md): src/db uses drizzle-orm/node-postgres
-  // + pg (TCP), which cannot run on Workers. Do not point this at production.
+  // STATUS: runtime is Workers-ready (edge Neon transport selected by the
+  // DATABASE_RUNTIME var below; see docs/CLOUDFLARE-PREVIEW.md). Staging may
+  // only ever point at development/test resources. Do not point this at
+  // production.
   "$schema": "https://developers.cloudflare.com/schemas/config/wrangler.jsonc",
   "name": "workflow-preview",
   "main": ".open-next/worker.js",
@@ -11,6 +12,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": {
+    // Selects the Neon WebSocket transport in src/db (TCP does not exist on
+    // Workers). Node runtimes (dev, scripts, tests, migrations) ignore it.
+    "DATABASE_RUNTIME": "edge",
     "NEXT_PUBLIC_APP_URL": "https://workflow-preview.example.test",
     "NEON_BRANCH": "development",
     "CLERK_AUTHORIZED_PARTIES": "https://workflow-preview.example.test",

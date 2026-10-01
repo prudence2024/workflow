@@ -148,9 +148,11 @@ the local environment has no provider credentials:
 - **Telegram ops bot.** `/status`, `/health`, `/usage`, `/failed` handlers and
   the fail-closed allowlist are tested; wiring a real bot token is pending.
 - **Cloudflare Workers preview.** `wrangler.jsonc` is scaffolded
-  (development vars only, secrets via `wrangler secret put`), but a Workers
-  deploy is blocked on migrating `src/db` from `pg` (TCP) to the Neon HTTP
-  driver — tracked as its own task in `docs/CLOUDFLARE-PREVIEW.md`.
+  (development vars only, secrets via `wrangler secret put`) and `src/db`
+  selects an edge Neon transport when `DATABASE_RUNTIME=edge`
+  (`tests/edge-driver.test.ts` proves tenant semantics hold). Remaining:
+  dashboard secrets + the first real preview build
+  (`docs/CLOUDFLARE-PREVIEW.md`).
   **Trigger.dev** scheduling is not integrated; the worker outbox route is
   ready to be driven by any cron/Trigger job (`docs/PROVIDERS.md`).
 

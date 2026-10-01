@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview:worker": "opennextjs-cloudflare preview",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -17,6 +19,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.35.0",
+    "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.2.0",
     "clsx": "^2.1.1",
@@ -30,6 +33,7 @@
     "zod": "^4.6.1"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.7",
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.15",
     "@types/pg": "8.18.0",
