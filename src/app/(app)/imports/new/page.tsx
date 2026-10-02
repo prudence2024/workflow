@@ -26,7 +26,7 @@ export default async function NewImportPage({
       <Card>
         <CardHeader title="Upload a spreadsheet" description="XLSX or CSV. We'll inspect the columns before you map anything." />
         <CardBody>
-          <form action={uploadImportAction} className="space-y-4" encType="multipart/form-data">
+          <form action={uploadImportAction} className="space-y-4">
             <FieldGroup>
               <Label htmlFor="file">Spreadsheet file</Label>
               <input
