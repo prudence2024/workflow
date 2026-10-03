@@ -43,7 +43,7 @@ export default async function SignupPage({
           Free forever for small operations. No card required.
         </p>
         <div className="mt-7">
-          <SignUp routing="hash" />
+          <SignUp routing="hash" forceRedirectUrl="/dashboard" />
         </div>
       </div>
     );

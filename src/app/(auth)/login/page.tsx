@@ -46,7 +46,7 @@ export default async function LoginPage({
         </p>
         <div className="mt-7">
           {/* routing="hash" renders the flow inline so /login keeps hosting it. */}
-          <SignIn routing="hash" />
+          <SignIn routing="hash" forceRedirectUrl="/dashboard" />
         </div>
       </div>
     );
