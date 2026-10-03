@@ -14,7 +14,11 @@ const LINKS = [
 ];
 
 export async function MarketingNav() {
-  const user = await getCurrentUser();
+  // Public marketing pages must not crash when optional signed-in nav state
+  // cannot be resolved (e.g., local profile DB failure). Fail closed: treat
+  // as logged-out rather than pretending an identity. Scoped to marketing
+  // nav only — authenticated routes still surface DB errors.
+  const user = await getCurrentUser().catch(() => null);
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-white/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1240px] items-center justify-between px-6">

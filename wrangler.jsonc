@@ -1,21 +1,46 @@
 {
   // Cloudflare Workers preview scaffold — DEVELOPMENT branch, TEST credentials only.
   //
-  // STATUS: scaffold only. A Workers deploy is BLOCKED on the database-driver
-  // migration (see docs/CLOUDFLARE-PREVIEW.md): src/db uses drizzle-orm/node-postgres
-  // + pg (TCP), which cannot run on Workers. Do not point this at production.
+  // STATUS: runtime is Workers-ready (edge Neon transport selected by the
+  // DATABASE_RUNTIME var below; see docs/CLOUDFLARE-PREVIEW.md). Staging may
+  // only ever point at development/test resources. Do not point this at
+  // production.
   "$schema": "https://developers.cloudflare.com/schemas/config/wrangler.jsonc",
   "name": "workflow-preview",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Workers Static Assets: serves the OpenNext client chunks, CSS and images
+  // built into .open-next/assets. Without this binding every hashed client
+  // asset 404s and pages render without hydration or styling.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
   "vars": {
+    // Selects the Neon WebSocket transport in src/db (TCP does not exist on
+    // Workers). Node runtimes (dev, scripts, tests, migrations) ignore it.
+    "DATABASE_RUNTIME": "edge",
     "NEXT_PUBLIC_APP_URL": "https://workflow-preview.example.test",
     "NEON_BRANCH": "development",
     "CLERK_AUTHORIZED_PARTIES": "https://workflow-preview.example.test",
     "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
     "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
+  },
+  // Preview deployments (testing branch) require their own vars block.
+  // Values mirror top-level vars but use the real branch preview origin so
+  // absolute URLs, Clerk authorized parties and callbacks resolve to the
+  // staging deployment — never production. No secrets in this file.
+  "previews": {
+    "vars": {
+      "DATABASE_RUNTIME": "edge",
+      "NEXT_PUBLIC_APP_URL": "https://testing-workflow.okwuborprudence.workers.dev",
+      "NEON_BRANCH": "development",
+      "CLERK_AUTHORIZED_PARTIES": "https://testing-workflow.okwuborprudence.workers.dev",
+      "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
+      "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
+    }
   }
   // Secrets (set with `wrangler secret put`, NEVER in this file):
   //   DATABASE_URL (pooled Neon DEVELOPMENT endpoint)

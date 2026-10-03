@@ -11,6 +11,19 @@ const nextConfig: NextConfig = {
   // `pg` must not be bundled: it opens TCP sockets and loads optional native
   // bindings, neither of which survives a bundler transform.
   serverExternalPackages: ["pg", "bcryptjs", "cheerio", "xlsx"],
+  // OpenNext tracing fix (pg 8.20.x + @opennextjs/cloudflare #1214/#1319):
+  // pg/lib/stream.js requires "pg-cloudflare" only on the workerd runtime
+  // (exports "." workerd.require -> ./dist/index.js). The default-condition
+  // trace copies only dist/empty.js, so the workerd file is missing from
+  // .open-next/server-functions output ("Could not resolve pg-cloudflare").
+  // This includes the Cloudflare-conditioned implementation in standalone
+  // tracing without externalizing or changing DB architecture.
+  outputFileTracingIncludes: {
+    "**/*": [
+      "./node_modules/pg-cloudflare/dist/**",
+      "./node_modules/pg-cloudflare/esm/**",
+    ],
+  },
 };
 
 export default nextConfig;

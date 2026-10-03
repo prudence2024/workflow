@@ -18,21 +18,28 @@
 - `next.config.ts` already disables the image optimizer and externalises
   `pg`/`bcryptjs`/`cheerio`/`xlsx` for a Workers-style bundle.
 
-## Blocker: database driver (must be its own task)
+## Database driver: DONE (Neon WebSocket transport)
 
-`src/db/index.ts` uses `drizzle-orm/node-postgres` + `pg.Pool` (raw TCP).
-Workers cannot open TCP sockets, so a Workers deploy needs:
+`src/db/index.ts` now selects the transport by `DATABASE_RUNTIME`
+(`wrangler.jsonc` sets `edge`; Node runtimes default to `node`):
 
-1. `npm i @neondatabase/serverless` (Neon HTTP driver).
-2. A `src/db` variant using `drizzle-orm/neon-http` selected by
-   `process.env.NEON_HTTP=1` (keep `pg` for local/Node runtimes).
-3. `scripts/*` and `tests/*` keep `pg` (they run on Node, unaffected).
-4. Re-run: typecheck, full suite against development, `opennext build`,
-   hosted security checks against the preview URL.
+- `node`: `pg` Pool over TCP — dev, scripts, migrations, tests. Unchanged.
+- `edge`: `@neondatabase/serverless` Pool over WebSocket +
+  `drizzle-orm/neon-serverless`, which supports real interactive
+  transactions. `withTenant()` is untouched: BEGIN → verified identity →
+  `set_tenant_context` → `SET LOCAL ROLE workflow_app` → queries →
+  COMMIT runs identically, so forced RLS, the restricted role and
+  membership checks hold on Workers.
+- One deliberate normalization: the WS driver wraps PG failures as
+  `{ query, params, cause }`, so the edge client lifts `cause.code` onto
+  the outer error — both transports expose the same SQLSTATE to callers.
 
-Until then, the honest preview target is any **Node** host (VPS, Render,
-Fly, `next start`) with the Neon development endpoint — where everything
-in §Verify already passes.
+Verified by `tests/edge-driver.test.ts` (runs with
+`DATABASE_RUNTIME=edge` against the development branch): restricted role,
+own-row reads, cross-tenant invisibility, forged-org 42501, rollback —
+5/5. Connection note: each WebSocket is one Postgres connection; the
+pool stays small (`DATABASE_POOL_MAX`, default 5). Fine for staging;
+production scale-up means Cloudflare Hyperdrive, a separate task.
 
 ## Deploy commands (when credentials + driver are ready)
 
@@ -59,7 +66,9 @@ npx opennextjs-cloudflare deploy  # preview environment, never production
 | exports | ✅ routes resolve identity via `getCurrentUser`; covered in walk (exports are action-driven, no console errors) |
 | webhook routes | ✅ unsigned/forged rejected 401; signed accepted; replay deduped |
 | worker routes | ✅ no secret → 401; honest tally with secret (code + idempotency suite) |
-| Cloudflare-hosted URL | ❌ blocked: no account/token here + driver migration pending |
+| Worker bundle (`opennextjs-cloudflare build`) | ✅ exit 0, `.open-next/worker.js` produced (local Windows needs no symlink privilege: junctions used by the local-only build-tool patch, never committed) |
+| Local workerd preview | ✅ boots with edge vars bound; `/api/health`, `/`, `/pricing`, `/login`, `/signup`, `/product` all 200; `/login` fail-closed without Clerk keys; client chunks + CSS 200 via the `ASSETS` binding (without it every hashed asset 404s and pages ship unhydrated) |
+| Cloudflare-hosted URL | ❌ blocked: needs dashboard secrets (dev Neon URL, Clerk test keys) + someone with account access to read the Preview build result |
 
 P6 hosted checks (scripts/hosted-security-check.mjs, 11/11) ran against
 local servers; re-run the same script with the preview BASE once it
