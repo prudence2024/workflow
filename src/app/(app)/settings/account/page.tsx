@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import { changePasswordAction, updateAccountAction } from "@/app/(app)/settings/actions";
+import { changePasswordAction, deleteAccountAction, updateAccountAction } from "@/app/(app)/settings/actions";
 import { Card, CardBody, CardHeader, Alert } from "@/components/ui/Surfaces";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, Input, Label } from "@/components/ui/Field";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
+import { authMode, getCurrentUser, legacyAuthAllowed } from "@/lib/auth";
+import { deletionImpact } from "@/lib/accountDeletion";
 
 // Authenticated page: reads session cookies and tenant context at request time.
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ export default async function AccountSettingsPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const { error, success } = await searchParams;
+  const clerkManaged = authMode() === "clerk";
+  const impact = user.clerkUserId ? await deletionImpact(user.clerkUserId) : null;
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -46,19 +49,93 @@ export default async function AccountSettingsPage({
         </CardBody>
       </Card>
 
+      {clerkManaged ? (
+        <Card>
+          <CardHeader title="Password & security" description="Managed by your sign-in provider" />
+          <CardBody>
+            <p className="text-[13.5px] text-[var(--color-ink-soft)]">
+              Workflow does not own your password — sign-in, MFA and session
+              security are managed by Clerk. Use your provider&apos;s account
+              screen to change credentials.
+            </p>
+          </CardBody>
+        </Card>
+      ) : (
+        legacyAuthAllowed() && (
+          <Card>
+            <CardHeader title="Change password" />
+            <CardBody>
+              <form action={changePasswordAction} className="space-y-4">
+                <FieldGroup>
+                  <Label htmlFor="currentPassword">Current password</Label>
+                  <Input id="currentPassword" name="currentPassword" type="password" required />
+                </FieldGroup>
+                <FieldGroup>
+                  <Label htmlFor="newPassword">New password</Label>
+                  <Input id="newPassword" name="newPassword" type="password" minLength={8} required />
+                </FieldGroup>
+                <Button type="submit">Update password</Button>
+              </form>
+            </CardBody>
+          </Card>
+        )
+      )}
+
       <Card>
-        <CardHeader title="Change password" />
+        <CardHeader
+          title="Danger zone"
+          description="Deleting your account is permanent and distinct from deleting a workspace"
+        />
         <CardBody>
-          <form action={changePasswordAction} className="space-y-4">
+          {impact == null || impact.memberships.length === 0 ? (
+            <p className="text-[13.5px] text-[var(--color-muted)]">
+              No workspace memberships to resolve. Deleting removes your profile and sign-in identity.
+            </p>
+          ) : (
+            <ul className="mb-4 space-y-1.5 text-[13px] text-[var(--color-ink-soft)]">
+              {impact.memberships.map((m) => (
+                <li key={m.orgId}>
+                  <span className="font-medium">{m.orgName}</span>{" "}
+                  <span className="text-[var(--color-muted)]">
+                    · {m.workspaceType} · {m.role}
+                    {m.soleEligible && m.workspaceType === "organization" && " · sole owner — resolve first"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form action={deleteAccountAction} className="space-y-4">
+            {impact != null &&
+              impact.memberships
+                .filter((m) => m.workspaceType === "personal" && m.soleEligible)
+                .map((m) => (
+                  <label key={m.orgId} className="flex cursor-pointer items-start gap-2.5 text-[13px]">
+                    <input type="checkbox" name="deletePersonal" className="mt-1" />
+                    <span>
+                      Delete my personal workspace <span className="font-medium">{m.orgName}</span> and its data
+                      with my account.
+                    </span>
+                  </label>
+                ))}
+            {impact != null &&
+              impact.memberships
+                .filter((m) => m.soleEligible && m.workspaceType === "organization")
+                .map((m) => (
+                  <label key={m.orgId} className="flex cursor-pointer items-start gap-2.5 text-[13px]">
+                    <input type="checkbox" name="deleteOrg" value={m.orgId} className="mt-1" />
+                    <span>
+                      Delete the workspace <span className="font-medium">{m.orgName}</span> and its data with my
+                      account (you are its sole owner).
+                    </span>
+                  </label>
+                ))}
             <FieldGroup>
-              <Label htmlFor="currentPassword">Current password</Label>
-              <Input id="currentPassword" name="currentPassword" type="password" required />
+              <Label htmlFor="confirmation">Type DELETE to confirm</Label>
+              <Input id="confirmation" name="confirmation" placeholder="DELETE" required autoComplete="off" />
             </FieldGroup>
-            <FieldGroup>
-              <Label htmlFor="newPassword">New password</Label>
-              <Input id="newPassword" name="newPassword" type="password" minLength={8} required />
-            </FieldGroup>
-            <Button type="submit">Update password</Button>
+            <Button type="submit" variant="danger">
+              Delete my account
+            </Button>
           </form>
         </CardBody>
       </Card>

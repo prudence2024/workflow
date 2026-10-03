@@ -1,10 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/app/Sidebar";
 
 export function MobileSidebar({ isPlatformAdmin }: { isPlatformAdmin: boolean }) {
   const [open, setOpen] = useState(false);
+
+  // Lock background page scroll while the drawer is open; close on Escape.
+  // No dependency: a single effect restoring the previous overflow value.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open ]);
   return (
     <div className="lg:hidden">
       <button
@@ -19,7 +35,7 @@ export function MobileSidebar({ isPlatformAdmin }: { isPlatformAdmin: boolean })
       {open && (
         <div className="fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
-          <div className="relative z-10 flex h-full w-[240px] flex-col bg-white shadow-xl">
+          <div className="relative z-10 flex h-full w-[240px] max-w-[85vw] flex-col bg-white shadow-xl">
             <button
               onClick={() => setOpen(false)}
               className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-[var(--color-muted)]"

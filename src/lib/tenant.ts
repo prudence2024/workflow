@@ -114,6 +114,22 @@ export async function createOrganizationForIdentity(
   });
 }
 
+export async function createOrganizationForIdentityWithType(
+  identity: Identity,
+  name: string,
+  slugBase: string,
+  workspaceType: "personal" | "organization",
+): Promise<string> {
+  return withUserSession(identity, async (tx) => {
+    const rows = await tx.execute<{ id: string }>(
+      sql`select app.create_organization(${name}, ${slugBase}) as id`,
+    );
+    const orgId = rows.rows[0].id;
+    await tx.execute(sql`update public.organizations set workspace_type = ${workspaceType} where id = ${orgId}::uuid`);
+    return orgId;
+  });
+}
+
 export async function createOrganizationForCurrentUser(
   clerkUserId: string,
   name: string,

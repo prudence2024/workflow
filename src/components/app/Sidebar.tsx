@@ -50,13 +50,16 @@ export function Sidebar({ isPlatformAdmin, asMobile = false }: { isPlatformAdmin
     <aside
       className={cn(
         "w-[228px] shrink-0 flex-col border-r border-[var(--color-border)] bg-white",
-        asMobile ? "flex h-full" : "hidden lg:flex",
+        // Desktop: stay pinned while page content scrolls; the nav area scrolls
+        // internally when it exceeds the viewport. Mobile drawer keeps h-full
+        // inside its fixed container (never sticky).
+        asMobile ? "flex h-full" : "hidden lg:sticky lg:top-0 lg:h-screen lg:flex",
       )}
     >
       <div className="flex h-16 items-center border-b border-[var(--color-border)] px-5">
         <BrandLockup href="/dashboard" size={28} />
       </div>
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {NAV.map((item) => {
           const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
           return (

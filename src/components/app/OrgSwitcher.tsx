@@ -21,7 +21,7 @@ export function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgMembership[]; cur
         <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-[var(--color-ink)] text-[10.5px] font-semibold text-white">
           {initials(current?.orgName ?? "")}
         </span>
-        <span className="max-w-[130px] truncate text-[13px] font-medium text-[var(--color-ink)]">{current?.orgName}</span>
+        <span className="max-w-[88px] truncate text-[13px] font-medium text-[var(--color-ink)] min-[400px]:max-w-[130px]">{current?.orgName}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

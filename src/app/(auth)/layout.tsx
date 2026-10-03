@@ -1,16 +1,15 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { BrandLockup } from "@/components/brand/Logo";
+
+export const dynamic = "force-dynamic";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="flex flex-col justify-between p-8 sm:p-12">
-        <Link href="/" className="flex items-center gap-2 font-display text-[16px] font-semibold text-[var(--color-ink)]">
-          <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-[var(--color-brand)] text-[13px] font-bold text-white">
-            F
-          </span>
-          Workflow
-        </Link>
+      {/* min-w-0 lets this grid item shrink below its content's intrinsic
+          width (e.g. the Clerk card) so 320px viewports never page-scroll. */}
+      <div className="flex min-w-0 flex-col justify-between p-8 sm:p-12">
+        <BrandLockup href="/" size={28} />
         <div className="mx-auto w-full max-w-[380px] py-16">{children}</div>
         <p className="text-[12px] text-[var(--color-muted)]">
           © {new Date().getFullYear()} Workflow. All rights reserved.

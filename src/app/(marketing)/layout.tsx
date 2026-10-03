@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { MarketingNav } from "@/components/marketing/Nav";
 import { MarketingFooter } from "@/components/marketing/Footer";
 
+export const dynamic = "force-dynamic";
+
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative">

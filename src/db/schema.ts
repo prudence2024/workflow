@@ -122,6 +122,12 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   planKey: text("plan_key").notNull().default("free"),
+  /**
+   * One secure workspace model for both account types: "personal" is still a
+   * real tenant (RLS unchanged, convertible to a team workspace by rename),
+   * "organization" is a team workspace. See onboarding choice UI.
+   */
+  workspaceType: text("workspace_type").notNull().default("organization"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -292,6 +298,16 @@ export type FormField = {
   type: string;
   required: boolean;
   options?: string[];
+  /**
+   * Browser-analysis metadata (jsonb shape only, no migration needed):
+   * which provider adapter produced the field and the stable,
+   * label-anchored descriptor the worker uses to locate the control.
+   */
+  provider?: "standard" | "google";
+  /** Provider-native field id (Google entry.<digits>) when available. */
+  providerFieldId?: string;
+  /** Stable locator hint, e.g. { kind: "google-question", label }. */
+  selector?: { kind: string; label?: string; index?: number };
 };
 
 export const campaignRecords = pgTable("campaign_records", {
@@ -310,9 +326,35 @@ export const campaignRecords = pgTable("campaign_records", {
   resultMessage: text("result_message"),
   attempts: integer("attempts").notNull().default(0),
   lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  /** Earliest time a retrying record may be claimed again (backoff). */
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+  /**
+   * Structured proof for status='successful': provider, submittedAt, final
+   * URL, confirmation type + safe text excerpt, worker run/attempt ids.
+   * A 'successful' row without evidence is a bug, never a claim.
+   */
+  submissionEvidence: jsonb("submission_evidence")
+    .$type<Record<string, unknown>>()
+    .default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  check(
+    "campaign_record_status_check",
+    sql`${table.status} in ('queued','processing','successful','failed','retrying','cancelled','human_action_required','needs_attention','unverified','skipped','pending_review','review')`,
+  ),
+  check(
+    "campaign_record_success_evidence_check",
+    sql`${table.status} <> 'successful' or (
+      jsonb_typeof(${table.submissionEvidence}) = 'object'
+      and ${table.submissionEvidence} ? 'provider'
+      and ${table.submissionEvidence} ? 'submittedAt'
+      and ${table.submissionEvidence} ? 'finalUrl'
+      and ${table.submissionEvidence} ? 'confirmationType'
+      and ${table.submissionEvidence} ? 'workerRunId'
+      and ${table.submissionEvidence} ? 'attemptId'
+    )`,
+  ),
   index("campaign_records_org_campaign_status_idx").on(
     table.orgId,
     table.campaignId,

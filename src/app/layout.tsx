@@ -28,8 +28,12 @@ export const metadata: Metadata = {
   description:
     "Manage records, automate processes, communicate through bulk email and SMS, organize campaigns, schedule reminders and report on operations — all in one multi-tenant workspace.",
   applicationName: "Workflow",
+  // icon-light.png is the transparent-background W mark (icon-dark.png has a
+  // baked-in white page background around its dark tile, which renders as a
+  // white box in browser tabs). No logo redraw: same approved symbol.
   icons: {
-    icon: "/brand/icon-dark.png",
+    icon: "/brand/icon-light.png",
+    apple: "/brand/icon-light.png",
   },
   openGraph: {
     title: "Workflow — All your operations. In flow.",

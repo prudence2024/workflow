@@ -5,6 +5,8 @@ import { getCampaignDetail } from "@/lib/data";
 import {
   analyzeFormAction,
   archiveCampaignAction,
+  cancelCampaignAction,
+  parkRecordAction,
   pauseCampaignAction,
   retryFailedAction,
   runCampaignAction,
@@ -20,6 +22,13 @@ import { formatDateTime } from "@/lib/utils";
 import type { FormField } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
+
+function evidenceTitle(r: { evidence: Record<string, unknown> | null }): string | undefined {
+  if (r.evidence == null) return undefined;
+  const excerpt = typeof r.evidence.confirmationExcerpt === "string" ? r.evidence.confirmationExcerpt : "";
+  const url = typeof r.evidence.finalUrl === "string" ? r.evidence.finalUrl : "";
+  return `Destination confirmation: ${excerpt}${url ? ` (${url})` : ""}`.slice(0, 300) || undefined;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   successful: "#1a7f4e",
@@ -103,10 +112,18 @@ export default async function CampaignDetailPage({
               </Button>
             </form>
           )}
+          {(campaign.status === "running" || campaign.status === "paused") && (
+            <form action={cancelCampaignAction}>
+              <input type="hidden" name="campaignId" value={id} />
+              <Button type="submit" variant="outline" size="sm">
+                Cancel
+              </Button>
+            </form>
+          )}
           <form action={runCampaignAction}>
             <input type="hidden" name="campaignId" value={id} />
-            <Button type="submit" size="sm" disabled={!canRun}>
-              Run campaign
+            <Button type="submit" size="sm" disabled={!canRun} title="Queues records for the submission worker — nothing is submitted from the browser">
+              Queue run
             </Button>
           </form>
           <form action={archiveCampaignAction}>
@@ -120,11 +137,12 @@ export default async function CampaignDetailPage({
 
       {error && <Alert tone="danger">{error}</Alert>}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Total records" value={total} />
-        <Stat label="Successful" value={stats.successful ?? 0} />
-        <Stat label="Needs attention" value={(stats.failed ?? 0) + (stats.human_action_required ?? 0)} />
-        <Stat label="Queued" value={(stats.queued ?? 0) + (stats.retrying ?? 0)} />
+        <Stat label="Successful" value={stats.successful ?? 0} hint="destination-confirmed only" />
+        <Stat label="Needs attention" value={(stats.failed ?? 0) + (stats.human_action_required ?? 0) + (stats.needs_attention ?? 0)} />
+        <Stat label="Unverified" value={stats.unverified ?? 0} hint="never submitted" />
+        <Stat label="Queued" value={(stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0)} />
       </div>
 
       {total > 0 && (
@@ -135,6 +153,8 @@ export default async function CampaignDetailPage({
                 { value: stats.successful ?? 0, color: STATUS_COLORS.successful, label: "Successful" },
                 { value: stats.failed ?? 0, color: STATUS_COLORS.failed, label: "Failed" },
                 { value: stats.human_action_required ?? 0, color: STATUS_COLORS.human_action_required, label: "Human action required" },
+                { value: stats.needs_attention ?? 0, color: STATUS_COLORS.human_action_required, label: "Needs attention" },
+                { value: stats.unverified ?? 0, color: STATUS_COLORS.skipped, label: "Unverified" },
                 { value: (stats.queued ?? 0) + (stats.retrying ?? 0), color: STATUS_COLORS.queued, label: "Queued / retrying" },
                 { value: stats.skipped ?? 0, color: STATUS_COLORS.skipped, label: "Skipped" },
               ]}
@@ -253,7 +273,21 @@ export default async function CampaignDetailPage({
                       <StatusPill status={r.status} />
                     </TD>
                     <TD className="font-mono-data">{r.attempts}</TD>
-                    <TD className="max-w-xs truncate text-[var(--color-muted)]">{r.resultMessage ?? "—"}</TD>
+                    <TD className="max-w-xs truncate text-[var(--color-muted)]">
+                      <span title={evidenceTitle(r)}>
+                        {r.resultMessage ?? "—"}
+                      </span>
+                      {r.status === "successful" && r.evidence != null && (
+                        <span className="mt-0.5 block truncate text-[11px] text-[var(--color-success)]">
+                          Confirmed {String((r.evidence as Record<string, unknown>).submittedAt ?? "").slice(0, 10) || "by destination"}
+                        </span>
+                      )}
+                      {r.status === "successful" && r.evidence == null && (
+                        <span className="mt-0.5 block text-[11px] font-medium text-[var(--color-warning)]">
+                          No confirmation evidence — treat as unverified
+                        </span>
+                      )}
+                    </TD>
                     <TD className="text-[var(--color-muted)]">{formatDateTime(r.updatedAt)}</TD>
                   </TR>
                 ))}

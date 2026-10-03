@@ -10,7 +10,10 @@ const nextConfig: NextConfig = {
   },
   // `pg` must not be bundled: it opens TCP sockets and loads optional native
   // bindings, neither of which survives a bundler transform.
-  serverExternalPackages: ["pg", "bcryptjs", "cheerio", "xlsx"],
+  // `playwright-core` must not be bundled either: it spawns Chromium and
+  // requires Node builtins (chromium-bidi) that break the Workers bundle.
+  // Browser analysis stays a Node-only runtime path (fail-closed on edge).
+  serverExternalPackages: ["pg", "playwright-core", "bcryptjs", "cheerio", "xlsx"],
   // OpenNext tracing fix (pg 8.20.x + @opennextjs/cloudflare #1214/#1319):
   // pg/lib/stream.js requires "pg-cloudflare" only on the workerd runtime
   // (exports "." workerd.require -> ./dist/index.js). The default-condition

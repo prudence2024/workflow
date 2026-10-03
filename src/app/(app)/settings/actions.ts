@@ -198,3 +198,87 @@ export async function changePasswordAction(formData: FormData) {
 }
 
 export { requireMembership };
+
+// ---------------------------------------------------------------------------
+// Account deletion (tombstone saga — see src/lib/accountDeletion.ts)
+// ---------------------------------------------------------------------------
+
+export async function deleteAccountAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const confirmation = String(formData.get("confirmation") ?? "").trim();
+  if (confirmation !== "DELETE") {
+    redirect("/settings/account?error=" + encodeURIComponent('Type DELETE to confirm account deletion'));
+  }
+
+  const { blockingWorkspaces, deletionImpact, executeDeletion } = await import("@/lib/accountDeletion");
+
+  // Clerk identities resolve by subject; the transitional legacy bridge
+  // resolves by the verified session token the database checks.
+  const clerkUserId = user.clerkUserId;
+  const impact = clerkUserId ? await deletionImpact(clerkUserId) : null;
+  if (!impact) {
+    redirect("/login");
+  }
+
+  const deletePersonal = formData.get("deletePersonal") === "on";
+  const deleteOrgs = formData.getAll("deleteOrg").map(String);
+  const blockers = blockingWorkspaces(impact, {
+    deletePersonalWorkspaces: deletePersonal,
+    deleteSoleOwnedWorkspaces: deleteOrgs,
+  });
+  if (blockers.length > 0) {
+    redirect(
+      "/settings/account?error=" +
+        encodeURIComponent(
+          `You are the sole owner of: ${blockers.join(", ")}. Transfer ownership or confirm workspace deletion first.`,
+        ),
+    );
+  }
+  // Personal workspaces you solely own must be explicitly deleted (their
+  // data cascades); ones shared with other eligible members are simply left
+  // by revoking your membership.
+  const solePersonal = impact.memberships.filter((m) => m.workspaceType === "personal" && m.soleEligible);
+  if (solePersonal.length > 0 && !deletePersonal) {
+    redirect(
+      "/settings/account?error=" +
+        encodeURIComponent(
+          `Confirm deletion of your personal workspace (${solePersonal.map((m) => m.orgName).join(", ")}) — its data will be removed with your account.`,
+        ),
+    );
+  }
+
+  try {
+    await executeDeletion(impact, {
+      deletePersonalWorkspaces: deletePersonal,
+      deleteSoleOwnedWorkspaces: deleteOrgs,
+    });
+  } catch (err) {
+    redirect("/settings/account?error=" + encodeURIComponent(err instanceof Error ? err.message : "Deletion failed partway — try again"));
+  }
+
+  // Clerk identity is deleted LAST so a failure here never leaves database
+  // garbage: the tombstoned profile self-heals into a fresh profile on the
+  // next sign-in, and a repeated request reports nothing to delete.
+  if (clerkUserId) {
+    try {
+      const { clerkClient } = await import("@clerk/nextjs/server");
+      const client = await clerkClient();
+      await client.users.deleteUser(clerkUserId);
+    } catch (err) {
+      const notFound =
+        err instanceof Error && /not found|404/i.test(err.message);
+      if (!notFound) {
+        redirect(
+          "/settings/account?error=" +
+            encodeURIComponent("Workspace data was removed but the sign-in identity could not be deleted — try again"),
+        );
+      }
+    }
+  }
+
+  const { destroySession } = await import("@/lib/auth");
+  await destroySession();
+  redirect("/?deleted=1");
+}

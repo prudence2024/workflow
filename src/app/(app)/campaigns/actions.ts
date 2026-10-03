@@ -6,8 +6,9 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { campaignRecords, campaigns, contacts, customFieldDefinitions, messageTemplates, messages } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { analyzeFormHtml, suggestMapping } from "@/lib/formAnalysis";
-import { processCampaignRecords, recomputeCampaignStats, resetFailedRecords } from "@/lib/submissionEngine";
+import { suggestMapping } from "@/lib/formAnalysis";
+import { analyzeFormUrl } from "@/lib/formProviders";
+import { parkRecordForReview, recomputeCampaignStats, resetFailedRecords } from "@/lib/submissionEngine";
 import { logActivity } from "@/lib/activity";
 import { incrementUsage } from "@/lib/usage";
 import { renderTemplate } from "@/lib/email";
@@ -72,39 +73,41 @@ export async function analyzeFormAction(formData: FormData) {
     redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Enter a valid, authorized form URL starting with http(s)://"));
   }
 
+  // Provider-routed analysis (SSRF policy inside): static HTML for plain
+  // forms, Playwright rendered-DOM for Google Forms. Never claims success
+  // when fields are ambiguous — diagnostics are surfaced, not hidden.
+  let analyzed: Awaited<ReturnType<typeof analyzeFormUrl>>;
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(formUrl, { signal: controller.signal, headers: { "User-Agent": "Workflow-FormAnalyzer/1.0" } });
-    clearTimeout(timeout);
+    analyzed = await analyzeFormUrl(formUrl);
+  } catch (err) {
+    redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(err instanceof Error ? err.message : "Could not analyze that form"));
+  }
 
-    if (!res.ok) {
-      redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(`Could not fetch form (HTTP ${res.status})`));
-    }
+  if (analyzed.fields.length === 0) {
+    const detail = analyzed.diagnostics[0] ?? "No form fields were detected on that page";
+    redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(detail));
+  }
 
-    const html = await res.text();
-    const fields = analyzeFormHtml(html);
-
-    if (fields.length === 0) {
-      redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("No form fields were detected on that page"));
-    }
-
+  try {
     await inWorkspace({ user, org }, async (tx) => {
       const definitions = await tx.select().from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
       const availableFields = ["firstName", "lastName", "email", "phone", "company", "address", ...definitions.map((d) => `custom__${d.key}`)];
-      const suggested = suggestMapping(availableFields, fields);
+      const suggested = suggestMapping(availableFields, analyzed.fields);
 
       await tx
         .update(campaigns)
-        .set({ formUrl, formDefinition: fields, fieldMapping: suggested, status: "draft", updatedAt: new Date() })
+        .set({ formUrl: analyzed.finalUrl, formDefinition: analyzed.fields, fieldMapping: suggested, status: "draft", updatedAt: new Date() })
         .where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
     });
 
-    await logActivity({ orgId: org.orgId, campaignId, type: "form_analyzed", message: `Analyzed form at ${formUrl}: ${fields.length} fields detected` });
+    const detail =
+      analyzed.diagnostics.length > 0
+        ? ` (${analyzed.diagnostics[0]})`
+        : "";
+    await logActivity({ orgId: org.orgId, campaignId, type: "form_analyzed", message: `Analyzed form at ${analyzed.finalUrl} via ${analyzed.provider}: ${analyzed.fields.length} fields detected${detail}` });
     await incrementUsage(org.orgId, "form_analyses");
-  } catch (err) {
-    const message = err instanceof Error && err.name === "AbortError" ? "Request timed out" : "Could not reach that URL";
-    redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(message));
+  } catch {
+    redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Could not save the form analysis"));
   }
 
   revalidatePath(`/campaigns/${campaignId}`);
@@ -178,29 +181,52 @@ export async function runCampaignAction(formData: FormData) {
   const { user, org } = await requireOrgContext();
   const campaignId = String(formData.get("campaignId"));
 
-  await inWorkspace({ user, org }, async (tx) => {
+  // Enqueue-only: records stay queued and the real worker
+  // (scripts/form-worker.mjs) claims them durably. Nothing is submitted
+  // synchronously inside this Server Action.
+  const queued = await inWorkspace({ user, org }, async (tx) => {
     await tx.update(campaigns).set({ status: "running", updatedAt: new Date() }).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
+    const rows = await tx.execute<{ n: number }>(sql`
+      select count(*)::int as n from public.campaign_records
+       where campaign_id = ${campaignId}::uuid and status in ('queued', 'retrying')
+    `);
+    return rows.rows[0]?.n ?? 0;
   });
-  await logActivity({ orgId: org.orgId, campaignId, type: "campaign_started", message: "Campaign run started" });
-
-  // The submission engine stands in for the queue worker and runs under its own
-  // context; the campaign status it returns is written back through the tenant
-  // gateway below.
-  const processed = await processCampaignRecords(org.orgId, campaignId);
-
-  const stats = await recomputeCampaignStats(org.orgId, campaignId);
-  const stillPending = (stats.queued ?? 0) + (stats.retrying ?? 0);
-  await inWorkspace({ user, org }, async (tx) => {
-    await tx
-      .update(campaigns)
-      .set({ status: stillPending > 0 ? "running" : "completed", updatedAt: new Date() })
-      .where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
-  });
-
-  await logActivity({ orgId: org.orgId, campaignId, type: "campaign_run_complete", message: `Processed ${processed} records this run` });
+  await logActivity({ orgId: org.orgId, campaignId, type: "campaign_started", message: `Campaign run started — ${queued} record(s) queued for the submission worker` });
 
   revalidatePath(`/campaigns/${campaignId}`);
   redirect(`/campaigns/${campaignId}`);
+}
+
+export async function cancelCampaignAction(formData: FormData) {
+  const { user, org } = await requireOrgContext();
+  const campaignId = String(formData.get("campaignId"));
+
+  const cancelled = await inWorkspace({ user, org }, async (tx) => {
+    await tx.update(campaigns).set({ status: "cancelled", updatedAt: new Date() }).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
+    const res = await tx.execute<{ n: number }>(sql`
+      update public.campaign_records
+         set status = 'cancelled',
+             result_message = 'Cancelled by the workspace — never submitted.',
+             updated_at = now()
+       where campaign_id = ${campaignId}::uuid
+         and status in ('queued', 'retrying')
+      returning 1
+    `);
+    return res.rows.length;
+  });
+  await recomputeCampaignStats(org.orgId, campaignId);
+  await logActivity({ orgId: org.orgId, campaignId, type: "campaign_cancelled", message: `Campaign cancelled — ${cancelled} queued record(s) withdrawn before submission` });
+  revalidatePath(`/campaigns/${campaignId}`);
+}
+
+export async function parkRecordAction(formData: FormData) {
+  const { user, org } = await requireOrgContext();
+  const campaignId = String(formData.get("campaignId"));
+  const recordId = String(formData.get("recordId"));
+  await parkRecordForReview(org.orgId, campaignId, recordId, "Parked for human review from the campaign queue.");
+  await recomputeCampaignStats(org.orgId, campaignId);
+  revalidatePath(`/campaigns/${campaignId}`);
 }
 
 export async function pauseCampaignAction(formData: FormData) {

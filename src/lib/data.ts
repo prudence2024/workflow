@@ -1,8 +1,30 @@
 import "server-only";
 import { sql } from "drizzle-orm";
+import { db } from "@/db";
 import { withTenant, type TenantTx } from "@/lib/tenant";
 import { identityOf, type CurrentUser, type OrgMembership } from "@/lib/auth";
 import { hasPermission } from "@/lib/authorization";
+
+/**
+ * Pending workspace invitations for a server-verified email address.
+ * Uses the administrative connection because the invitee has no tenant
+ * context yet; the email comes from Clerk, never from browser input, and
+ * only the invitation token (already a bearer credential) is returned.
+ */
+export async function pendingInvitationsForEmail(
+  email: string,
+): Promise<{ token: string; orgName: string; role: string }[]> {
+  const rows = await db.execute<{ token: string; org_name: string; role: string }>(sql`
+    select i.token, o.name as org_name, i.role
+      from public.organization_invitations i
+      join public.organizations o on o.id = i.org_id
+     where lower(i.email) = lower(${email})
+       and i.status = 'pending'
+       and i.expires_at > now()
+     order by i.created_at desc
+  `);
+  return rows.rows.map((r) => ({ token: r.token, orgName: r.org_name, role: r.role }));
+}
 
 /**
  * The application data gateway.
@@ -835,6 +857,8 @@ export type CampaignRecordRow = {
   contactId: string;
   contactName: string;
   email: string | null;
+  /** Destination-observed confirmation proof; present only on real successes. */
+  evidence: Record<string, unknown> | null;
 };
 
 export async function getCampaignDetail(
@@ -888,8 +912,10 @@ export async function getCampaignDetail(
       first_name: string;
       last_name: string;
       email: string | null;
+      submission_evidence: Record<string, unknown> | null;
     }>(sql`
       select r.id, r.status, r.result_message, r.attempts, r.updated_at,
+             r.submission_evidence,
              c.id as contact_id, c.first_name, c.last_name, c.email
         from public.campaign_records r
         join public.contacts c on c.id = r.contact_id
@@ -927,6 +953,7 @@ export async function getCampaignDetail(
         contactId: r.contact_id,
         contactName: `${r.first_name} ${r.last_name}`.trim(),
         email: r.email,
+        evidence: r.submission_evidence,
       })),
       templates: templates.rows,
       customFields: fields.rows,

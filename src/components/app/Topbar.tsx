@@ -16,13 +16,17 @@ export function Topbar({
   isPlatformAdmin: boolean;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--color-border)] bg-white/90 px-4 backdrop-blur-md sm:px-6">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 flex h-16 min-w-0 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-white/90 px-4 backdrop-blur-md sm:px-6">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <MobileSidebar isPlatformAdmin={isPlatformAdmin} />
         <OrgSwitcher orgs={orgs} currentOrgId={currentOrg.orgId} />
-        <RoleBadge role={currentOrg.role} />
+        {/* Role badge is non-essential chrome at phone widths — hiding it
+            below ~480px keeps the switcher + account menu clear of overflow. */}
+        <span className="hidden min-[480px]:inline-flex">
+          <RoleBadge role={currentOrg.role} />
+        </span>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         <span className="hidden text-[12.5px] text-[var(--color-muted)] sm:inline">{currentOrg.planKey.toUpperCase()} plan</span>
         <UserMenu name={user.name} email={user.email} />
       </div>

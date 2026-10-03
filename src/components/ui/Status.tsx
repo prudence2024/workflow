@@ -24,12 +24,17 @@ const STATUS_STYLES: Record<string, string> = {
   mapped: "bg-[var(--color-info-soft)] text-[var(--color-info)] border-[var(--color-info)]/20",
   validated: "bg-[var(--color-info-soft)] text-[var(--color-info)] border-[var(--color-info)]/20",
   imported: "bg-[var(--color-success-soft)] text-[var(--color-success)] border-[var(--color-success)]/20",
+  // submission truthfulness: never conflate unverified with successful.
+  needs_attention: "bg-[var(--color-warning-soft)] text-[var(--color-warning)] border-[var(--color-warning)]/20",
+  unverified: "bg-slate-100 text-slate-600 border-slate-200",
   // messages
   sent: "bg-[var(--color-success-soft)] text-[var(--color-success)] border-[var(--color-success)]/20",
   delivered: "bg-[var(--color-success-soft)] text-[var(--color-success)] border-[var(--color-success)]/20",
 };
 
 function labelize(status: string): string {
+  if (status === "needs_attention") return "Needs attention";
+  if (status === "human_action_required") return "Human action required";
   return status
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
