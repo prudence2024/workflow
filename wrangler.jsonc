@@ -35,6 +35,7 @@
   "previews": {
     "vars": {
       "DATABASE_RUNTIME": "edge",
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_c3dlZXBpbmctZ3JvdXNlLTYzNTMuY2xlcmsuYWNjb3VudHMuZGV2JA",
       "NEXT_PUBLIC_APP_URL": "https://testing-workflow.okwuborprudence.workers.dev",
       "NEON_BRANCH": "development",
       "CLERK_AUTHORIZED_PARTIES": "https://testing-workflow.okwuborprudence.workers.dev",

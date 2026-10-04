@@ -11,13 +11,17 @@ import { NextResponse, type NextProxy } from "next/server";
  * "unconfigured" and refuses every session, so a misconfigured production
  * deployment is unauthenticated rather than silently password-authenticated.
  */
-const clerkConfigured = Boolean(
-  process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-);
+const clerkConfigured = Boolean(process.env.CLERK_SECRET_KEY);
 
 const clerkProxy = clerkConfigured ? clerkMiddleware() : null;
 
 export const proxy: NextProxy = (request, event) => {
+  if (request.nextUrl.pathname === "/dashboard") {
+    console.info("[auth] proxy dashboard request", {
+      clerkConfigured,
+      clerkMiddlewareMounted: Boolean(clerkProxy),
+    });
+  }
   if (clerkProxy) return clerkProxy(request, event);
   return NextResponse.next();
 };

@@ -23,8 +23,35 @@ const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 // configured. Remove it once the migration is verified complete.
 // ---------------------------------------------------------------------------
 
+function clerkErrorDetails(error: unknown): {
+  errorName: string;
+  errorCode: string | null;
+  safeMessage: string;
+} {
+  const value = error as { name?: unknown; code?: unknown; message?: unknown };
+  const rawMessage = typeof value?.message === "string" ? value.message : "unknown Clerk error";
+  const safeMessage = rawMessage
+    .replace(/(?:bearer|token|authorization)\s*[:=]?\s*\S+/gi, "[redacted]")
+    .replace(/(?:sk|pk)_(?:test|live)_[A-Za-z0-9_-]+/g, "[redacted]")
+    .slice(0, 240);
+  return {
+    errorName: typeof value?.name === "string" ? value.name : "UnknownError",
+    errorCode: typeof value?.code === "string" ? value.code : null,
+    safeMessage,
+  };
+}
+
+function throwClerkOperationalError(stage: string, error: unknown): never {
+  const details = clerkErrorDetails(error);
+  console.error(`[auth] Clerk ${stage} failure`, details);
+  throw new Error(`Clerk ${stage} failed; authentication service unavailable`);
+}
+
 export function isClerkConfigured(): boolean {
-  return Boolean(process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  // Server authentication only needs the secret key. The publishable key is a
+  // client/build concern and may not be present in the Worker process even when
+  // ClerkJS was bundled into the browser client.
+  return Boolean(process.env.CLERK_SECRET_KEY);
 }
 
 /**
@@ -72,12 +99,15 @@ async function resolveClerkSubject(): Promise<string | null> {
   try {
     const { auth } = await import("@clerk/nextjs/server");
     const session = await auth();
+    console.info("[auth] Clerk session resolved", {
+      authMode: "clerk",
+      userIdPresent: Boolean(session?.userId),
+    });
     return session?.userId ?? null;
-  } catch {
-    return null;
+  } catch (error) {
+    return throwClerkOperationalError("server session resolution", error);
   }
 }
-
 /**
  * Provision or fetch the local profile row for a verified Clerk subject.
  * Identity values come from Clerk, never from request input.
@@ -98,12 +128,23 @@ async function ensureLocalProfile(
       [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
       clerkUser.username ||
       undefined;
-  } catch {
-    // Without profile data we cannot provision a trustworthy local row.
-    return null;
+    console.info("[auth] Clerk user lookup completed", {
+      clerkSubjectPresent: true,
+      clerkUserLookup: "success",
+      primaryEmailPresent: Boolean(email),
+    });
+  } catch (error) {
+    return throwClerkOperationalError("user lookup", error);
   }
 
-  if (!email) return null;
+  if (!email) {
+    console.error("[auth] Clerk user lookup returned no usable primary email", {
+      clerkSubjectPresent: true,
+      clerkUserLookup: "success",
+      primaryEmailPresent: false,
+    });
+    throw new Error("Clerk profile cannot be provisioned");
+  }
 
   const resolvedName = name && name.trim() !== "" ? name : email.split("@")[0];
 
@@ -111,8 +152,18 @@ async function ensureLocalProfile(
     sql`select app.upsert_local_user(${clerkUserId}, ${email}, ${resolvedName}) as id`,
   );
   const id = rows.rows[0]?.id;
-  if (!id) return null;
+  if (!id) {
+    console.error("[auth] local profile provisioning returned no user id", {
+      clerkSubjectPresent: true,
+      appUpsertLocalUser: "empty-result",
+    });
+    throw new Error("Local profile provisioning failed");
+  }
 
+  console.info("[auth] local profile provisioning completed", {
+    clerkSubjectPresent: true,
+    localUserIdPresent: true,
+  });
   return { id, email, name: resolvedName };
 }
 
