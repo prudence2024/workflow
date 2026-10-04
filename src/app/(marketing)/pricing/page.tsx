@@ -47,7 +47,7 @@ export default function PricingPage() {
                 ))}
               </ul>
               <LinkButton
-                href="/signup"
+                href={`/signup?plan=${key}`}
                 variant={featured ? "secondary" : "outline"}
                 className={cn("mt-7 w-full", featured && "!bg-white !text-[var(--color-brand)] hover:!bg-white/90")}
               >

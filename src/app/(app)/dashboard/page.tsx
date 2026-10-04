@@ -9,7 +9,7 @@ import { Stat } from "@/components/ui/Data";
 import { StatusPill } from "@/components/ui/Status";
 import { LinkButton } from "@/components/ui/Button";
 import { formatDateTime, pct, timeAgo } from "@/lib/utils";
-import { PLANS } from "@/lib/plans";
+import { canonicalPlanKey, PLANS } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export default async function DashboardPage() {
   const successRate = pct(successfulThisMonth.count, submissionsThisMonth.count || 1);
 
   const usage = await getUsageCounters({ user, org });
-  const plan = PLANS[org.planKey as keyof typeof PLANS] ?? PLANS.free;
+  const plan = PLANS[canonicalPlanKey(org.planKey)];
 
   return (
     <div className="space-y-6">

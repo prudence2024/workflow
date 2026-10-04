@@ -20,6 +20,7 @@ import { inWorkspace } from "@/lib/data";
 import { withUserSession } from "@/lib/tenant";
 import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity";
+import { assertPlanLimit, PlanLimitError } from "@/lib/planLimits";
 
 async function requireOrgAndRole(minPermission: Parameters<typeof can>[1]) {
   const user = await getCurrentUser();
@@ -67,12 +68,19 @@ export async function inviteMemberAction(formData: FormData) {
 
   // The database mints the token, refuses the owner role, and audits the
   // invitation — the application cannot weaken any of those rules.
-  const token = await inWorkspace({ user, org }, async (tx) => {
+  let token: string;
+  try {
+    token = await inWorkspace({ user, org }, async (tx) => {
+    await assertPlanLimit(tx, org.orgId, "users");
     const res = await tx.execute<{ token: string }>(
       sql`select app.create_invitation(${org.orgId}::uuid, ${email}, ${parsed.data.role}) as token`,
     );
     return res.rows[0].token;
   });
+  } catch (error) {
+    if (error instanceof PlanLimitError) redirect("/settings/organization?error=" + encodeURIComponent(error.message));
+    throw error;
+  }
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/invite/${token}`;
   await sendEmail({

@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { canonicalPlanKey } from "@/lib/plans";
 
 /**
  * Founder operations bot.
@@ -121,7 +122,7 @@ async function statusReport(): Promise<string> {
       "*Recent workspaces*",
       ...rows.rows
         .slice(0, 5)
-        .map((r) => `• ${r.organization_name} (${r.plan_key}) — ${r.contact_count} contacts`),
+        .map((r) => `• ${r.organization_name} (${canonicalPlanKey(r.plan_key)}) — ${r.contact_count} contacts`),
     ];
     return lines.join("\n");
   } catch (err) {

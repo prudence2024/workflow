@@ -3,6 +3,7 @@ import { UserMenu } from "@/components/app/UserMenu";
 import { RoleBadge } from "@/components/ui/Status";
 import type { OrgMembership, CurrentUser } from "@/lib/auth";
 import { MobileSidebar } from "@/components/app/MobileSidebar";
+import { canonicalPlanKey } from "@/lib/plans";
 
 export function Topbar({
   user,
@@ -27,7 +28,7 @@ export function Topbar({
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <span className="hidden text-[12.5px] text-[var(--color-muted)] sm:inline">{currentOrg.planKey.toUpperCase()} plan</span>
+        <span className="hidden text-[12.5px] text-[var(--color-muted)] sm:inline">{canonicalPlanKey(currentOrg.planKey).toUpperCase()} plan</span>
         <UserMenu name={user.name} email={user.email} />
       </div>
     </header>

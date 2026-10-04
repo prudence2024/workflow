@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { getUsageCounters } from "@/lib/data";
-import { PLANS, PLAN_ORDER } from "@/lib/plans";
+import { canonicalPlanKey, PLANS, PLAN_ORDER } from "@/lib/plans";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
 import { LinkButton } from "@/components/ui/Button";
@@ -16,7 +16,8 @@ export default async function UsagePage() {
   if (!org) redirect("/onboarding");
 
   const usage = await getUsageCounters({ user, org });
-  const plan = PLANS[org.planKey as keyof typeof PLANS] ?? PLANS.free;
+  const currentPlanKey = canonicalPlanKey(org.planKey);
+  const plan = PLANS[currentPlanKey];
 
   const metrics = [
     { key: "contacts", label: "Contacts", limit: plan.limits.contacts },
@@ -61,7 +62,7 @@ export default async function UsagePage() {
         <CardBody className="grid gap-4 md:grid-cols-3">
           {PLAN_ORDER.map((key) => {
             const p = PLANS[key];
-            const isCurrent = key === org.planKey;
+            const isCurrent = key === currentPlanKey;
             return (
               <div key={key} className={cn("rounded-[var(--radius-sm)] border p-4", isCurrent ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)]" : "border-[var(--color-border)]")}>
                 <p className="font-display text-[14.5px] font-semibold text-[var(--color-ink)]">{p.name}</p>

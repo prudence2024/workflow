@@ -6,7 +6,7 @@
   // only ever point at development/test resources. Do not point this at
   // production.
   "$schema": "https://developers.cloudflare.com/schemas/config/wrangler.jsonc",
-  "name": "workflow-preview",
+  "name": "workflow",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],

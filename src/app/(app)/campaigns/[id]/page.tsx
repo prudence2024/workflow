@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { getRequestWorkspaceContext } from "@/lib/requestContext";
 import { getCampaignDetail } from "@/lib/data";
 import {
   analyzeFormAction,
@@ -19,6 +19,7 @@ import { FieldGroup, HelpText, Input, Label, Select } from "@/components/ui/Fiel
 import { StatusPill } from "@/components/ui/Status";
 import { DistributionBar, Stat, TD, TH, THead, TR, Table } from "@/components/ui/Data";
 import { formatDateTime } from "@/lib/utils";
+import { analysisStatusMessage } from "@/lib/formAnalysisJobs";
 import type { FormField } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -45,17 +46,14 @@ export default async function CampaignDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; analyze?: string }>;
+  searchParams: Promise<{ error?: string; analyze?: string; analysis?: string }>;
 }) {
-  const user = await getCurrentUser();
+  const { user, currentOrg: org } = await getRequestWorkspaceContext();
   if (!user) redirect("/login");
-  const orgs = await getUserOrganizations(user);
-  if (orgs.length === 0) redirect("/onboarding");
-  const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
   const { id } = await params;
-  const { error, analyze } = await searchParams;
+  const { error, analyze, analysis } = await searchParams;
 
   // Tenant-scoped read: campaign, records, templates and custom fields all in
   // one transaction as the restricted role. A campaign from another workspace
@@ -136,6 +134,14 @@ export default async function CampaignDetailPage({
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
+      {analysis === "queued" && <Alert tone="info" title="Analysis queued">A Node browser worker will inspect the rendered form shortly.</Alert>}
+      {campaign.formAnalysisStatus !== "idle" && campaign.formAnalysisStatus !== "ready" && campaign.formAnalysisStatus !== "queued" && (
+        <Alert tone={campaign.formAnalysisStatus === "needs_attention" ? "warning" : "danger"} title={campaign.formAnalysisStatus === "needs_attention" ? "Needs attention" : "Analysis failed"}>
+          {analysisStatusMessage(campaign.formAnalysisStatus, campaign.formAnalysisError)}
+        </Alert>
+      )}
+      {campaign.formAnalysisStatus === "processing" && <Alert tone="info">{analysisStatusMessage("processing")}</Alert>}
+      {campaign.formAnalysisStatus === "ready" && fields.length > 0 && <Alert tone="success">Rendered form analyzed: {fields.length} field(s) detected.</Alert>}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Total records" value={total} />
@@ -174,7 +180,7 @@ export default async function CampaignDetailPage({
                 <Input id="formUrl" name="formUrl" type="url" defaultValue={campaign.formUrl ?? ""} placeholder="https://forms.example.org/registration" required />
                 <HelpText>The platform performs a single authorized fetch — no CAPTCHA or anti-bot bypass is ever attempted.</HelpText>
               </FieldGroup>
-              <Button type="submit">Analyze form</Button>
+              <Button type="submit">Queue form analysis</Button>
             </form>
           </CardBody>
         </Card>

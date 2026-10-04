@@ -1,6 +1,4 @@
 import "server-only";
-import { execFile } from "node:child_process";
-import { join } from "node:path";
 import { analyzeFormHtml } from "@/lib/formAnalysis";
 import { assertFormUrlAllowed, fetchFormHtml } from "@/lib/formUrlPolicy";
 import type { FormField } from "@/db/schema";
@@ -94,51 +92,7 @@ export async function analyzeStandardForm(rawUrl: string): Promise<AnalyzedForm>
  */
 export async function analyzeGoogleForm(rawUrl: string): Promise<AnalyzedForm> {
   await assertFormUrlAllowed(rawUrl);
-  if (process.env.DATABASE_RUNTIME === "edge") {
-    throw new Error("Browser form analysis is unavailable in this runtime");
-  }
-  const helper = join(process.cwd(), "scripts", "analyze-form.mjs");
-  const stdout = await new Promise<string>((resolve, reject) => {
-    execFile(process.execPath, [helper, rawUrl], { timeout: 90_000 }, (err, out, errOut) => {
-      if (err) {
-        const detail = String(errOut || err.message || err).split("\n")[0].replace(/^ERROR:\s*/, "");
-        reject(new Error(detail || "Browser analysis failed"));
-        return;
-      }
-      resolve(String(out));
-    });
-  });
-  let parsed: AnalyzedForm;
-  try {
-    parsed = JSON.parse(stdout) as AnalyzedForm;
-  } catch {
-    throw new Error("Browser analysis returned an unreadable result");
-  }
-  if (!parsed || parsed.provider !== "google" || !Array.isArray(parsed.fields)) {
-    throw new Error("Browser analysis returned an unreadable result");
-  }
-  // Re-parse labels through the unit-tested parser so the contract holds
-  // even if the helper and this module ever drift.
-  const fields: FormField[] = parsed.fields.map((f, index: number) => {
-    const relabelled = parseGoogleQuestionText(String(f.label ?? ""), index);
-    const label = relabelled.label || String(f.label ?? `Question ${index + 1}`).slice(0, 80);
-    return {
-      name: String(f.name ?? `question_${index}`),
-      label,
-      type: inferGoogleFieldType(label, String(f.type ?? "text")),
-      required: typeof f.required === "boolean" ? f.required : relabelled.required,
-      options: Array.isArray(f.options) ? (f.options as string[]) : undefined,
-      provider: "google" as const,
-      providerFieldId: typeof f.providerFieldId === "string" ? f.providerFieldId : undefined,
-      selector: { kind: "google-question", label, index },
-    };
-  });
-  return {
-    provider: "google",
-    finalUrl: typeof parsed.finalUrl === "string" ? parsed.finalUrl : rawUrl,
-    fields,
-    diagnostics: Array.isArray(parsed.diagnostics) ? (parsed.diagnostics as string[]) : [],
-  };
+  throw new Error("Google Forms analysis is queued for the external Node browser worker");
 }
 
 /**

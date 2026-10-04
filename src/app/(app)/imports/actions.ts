@@ -11,6 +11,7 @@ import { saveBuffer } from "@/lib/storage";
 import { normalizeEmail, normalizePhone, validateContactRow } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 import { incrementUsage } from "@/lib/usage";
+import { assertPlanLimit } from "@/lib/planLimits";
 
 const CONTACT_FIELDS = ["firstName", "lastName", "email", "phone", "company", "address"] as const;
 
@@ -159,6 +160,7 @@ export async function commitImportAction(formData: FormData) {
   const outcome = await inWorkspace({ user, org }, async (tx) => {
     const [record] = await tx.select().from(imports).where(and(eq(imports.id, importId), eq(imports.orgId, org.orgId))).limit(1);
     if (!record || record.status !== "validated") return null;
+    await assertPlanLimit(tx, org.orgId, "contacts", record.validRows);
 
     const rows = (record.rows as Record<string, string>[]) ?? [];
     const mapping = (record.mapping as Record<string, string>) ?? {};

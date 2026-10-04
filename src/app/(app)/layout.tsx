@@ -1,18 +1,15 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { getRequestWorkspaceContext } from "@/lib/requestContext";
 import { Sidebar } from "@/components/app/Sidebar";
 import { Topbar } from "@/components/app/Topbar";
+import { WorkflowAiPanel } from "@/components/app/WorkflowAiPanel";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const user = await getCurrentUser();
+  const { user, orgs, currentOrg } = await getRequestWorkspaceContext();
   if (!user) redirect("/login");
+  if (orgs.length === 0 || !currentOrg) redirect("/onboarding");
 
-  const orgs = await getUserOrganizations(user);
-  if (orgs.length === 0) redirect("/onboarding");
-
-  const currentOrg = await getCurrentOrg(user);
-  if (!currentOrg) redirect("/onboarding");
 
   return (
     <div className="flex min-h-screen">
@@ -22,7 +19,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           scroll. Tables keep their own overflow-x-auto wrappers. */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <Topbar user={user} orgs={orgs} currentOrg={currentOrg} isPlatformAdmin={user.isPlatformAdmin} />
-        <main className="flex-1 bg-[var(--color-canvas)] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="flex-1 bg-[var(--color-canvas)] px-4 py-6 sm:px-6 lg:px-8">{children}</main>\n        <WorkflowAiPanel />
       </div>
     </div>
   );

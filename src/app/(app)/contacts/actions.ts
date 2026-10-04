@@ -11,6 +11,7 @@ import { inWorkspace } from "@/lib/data";
 import { normalizeEmail, normalizePhone, slugify } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 import { incrementUsage } from "@/lib/usage";
+import { assertPlanLimit } from "@/lib/planLimits";
 
 async function requireOrgContext() {
   const user = await getCurrentUser();
@@ -55,6 +56,7 @@ export async function createContactAction(formData: FormData) {
       .where(eq(customFieldDefinitions.orgId, org.orgId));
     const customFields = extractCustomFields(formData, definitions);
 
+    await assertPlanLimit(tx, org.orgId, "contacts");
     const [created] = await tx
       .insert(contacts)
       .values({

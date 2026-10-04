@@ -5,13 +5,15 @@ import { authMode } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Surfaces";
+import { isSelectablePlanKey } from "@/lib/plans";
 
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; plan?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, plan: rawPlan } = await searchParams;
+  const selectedPlan = isSelectablePlanKey(rawPlan) ? rawPlan : null;
   const mode = authMode();
 
   if (mode === "unconfigured") {
@@ -40,10 +42,10 @@ export default async function SignupPage({
           Create your workspace
         </h1>
         <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">
-          Free forever for small operations. No card required.
+          Choose a plan after you verify your identity. Paid plans remain pending until billing is connected.
         </p>
         <div className="mt-7">
-          <SignUp routing="hash" forceRedirectUrl="/dashboard" />
+          <SignUp routing="hash" forceRedirectUrl={`/onboarding?step=plan${selectedPlan ? `&plan=${selectedPlan}` : ""}`} />
         </div>
       </div>
     );

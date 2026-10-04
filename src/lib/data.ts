@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { withTenant, type TenantTx } from "@/lib/tenant";
 import { identityOf, type CurrentUser, type OrgMembership } from "@/lib/auth";
 import { hasPermission } from "@/lib/authorization";
+import { timedRuntimeStage } from "@/lib/diagnostics";
 
 /**
  * Pending workspace invitations for a server-verified email address.
@@ -873,6 +874,8 @@ export async function getCampaignDetail(
     formUrl: string | null;
     formDefinition: unknown;
     fieldMapping: Record<string, string>;
+    formAnalysisStatus: string;
+    formAnalysisError: string | null;
     stats: Record<string, number>;
     updatedAt: Date;
   } | null;
@@ -880,7 +883,7 @@ export async function getCampaignDetail(
   templates: { id: string; name: string }[];
   customFields: { key: string; label: string }[];
 }> {
-  return inWorkspace(workspace, async (tx) => {
+  return timedRuntimeStage("campaign.detail", () => inWorkspace(workspace, async (tx) => {
     const campaignRes = await tx.execute<{
       id: string;
       name: string;
@@ -889,10 +892,12 @@ export async function getCampaignDetail(
       form_url: string | null;
       form_definition: unknown;
       field_mapping: Record<string, string> | null;
+      form_analysis_status: string;
+      form_analysis_error: string | null;
       stats: Record<string, number> | null;
       updated_at: Date;
     }>(sql`
-      select id, name, type, status, form_url, form_definition, field_mapping, stats, updated_at
+      select id, name, type, status, form_url, form_definition, field_mapping, form_analysis_status, form_analysis_error, stats, updated_at
         from public.campaigns
        where id = ${campaignId}::uuid
        limit 1
@@ -939,6 +944,8 @@ export async function getCampaignDetail(
         type: c.type,
         status: c.status,
         formUrl: c.form_url,
+         formAnalysisStatus: c.form_analysis_status,
+         formAnalysisError: c.form_analysis_error,
         formDefinition: c.form_definition ?? [],
         fieldMapping: c.field_mapping ?? {},
         stats: c.stats ?? {},
@@ -958,7 +965,7 @@ export async function getCampaignDetail(
       templates: templates.rows,
       customFields: fields.rows,
     };
-  });
+  }), { tenantScoped: true });
 }
 
 // ---------------------------------------------------------------------------

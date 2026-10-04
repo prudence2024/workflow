@@ -2,15 +2,18 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getCurrentUser, identityOf } from "@/lib/auth";
-import { createOrganizationForIdentityWithType } from "@/lib/tenant";
+import { getCurrentUser, getUserOrganizations, identityOf } from "@/lib/auth";
+import { createInitialOrganizationForIdentityWithPlan, createOrganizationForIdentityWithType } from "@/lib/tenant";
 import { slugify } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 import { acceptInvitationAction } from "@/app/(app)/settings/actions";
+import { selectablePlanKeySchema } from "@/lib/plans";
 
 export { acceptInvitationAction };
 
 const workspaceSchema = z.object({
+  step: z.enum(["plan", "workspace"]).optional().default("workspace"),
+  plan: selectablePlanKeySchema.optional().default("free"),
   accountType: z.enum(["personal", "organization"]),
   name: z.string().optional().default(""),
 });
@@ -26,6 +29,8 @@ export async function createWorkspaceAction(formData: FormData) {
   if (!user) redirect("/login");
 
   const parsed = workspaceSchema.safeParse({
+    step: formData.get("step") ?? "workspace",
+    plan: formData.get("plan") ?? "free",
     accountType: formData.get("accountType"),
     name: formData.get("name"),
   });
@@ -33,6 +38,7 @@ export async function createWorkspaceAction(formData: FormData) {
     redirect("/onboarding?error=" + encodeURIComponent("Choose how you will use Workflow"));
   }
 
+  const plan = parsed.data.plan ?? "free";
   const { accountType } = parsed.data;
   const rawName = parsed.data.name.trim();
   if (accountType === "organization" && rawName.length < 2) {
@@ -44,10 +50,11 @@ export async function createWorkspaceAction(formData: FormData) {
   const name = accountType === "personal" ? `${firstName}'s Workspace` : rawName;
   const slug = slugify(name) || "workspace";
 
-  // The database creates the organisation, its owner membership, subscription
-  // and audit entry in one transaction and resolves slug collisions itself.
-  const orgId = await createOrganizationForIdentityWithType(identityOf(user!), name, slug, accountType);
-
+  const memberships = await getUserOrganizations(user!);
+  const result = memberships.length === 0
+    ? await createInitialOrganizationForIdentityWithPlan(identityOf(user!), name, slug, accountType, plan)
+    : { orgId: await createOrganizationForIdentityWithType(identityOf(user!), name, slug, accountType), created: true };
+  const orgId = result.orgId;
   await logActivity({
     orgId,
     type: "org_created",
@@ -59,5 +66,5 @@ export async function createWorkspaceAction(formData: FormData) {
 
   const { setCurrentOrgCookie } = await import("@/lib/auth");
   await setCurrentOrgCookie(orgId);
-  redirect("/dashboard");
+  redirect(plan !== "free" && result.created ? `/onboarding?step=billing&plan=${plan}` : "/dashboard");
 }

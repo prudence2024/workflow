@@ -1,6 +1,8 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { timedRuntimeStage } from "@/lib/diagnostics";
+import type { SelectablePlanKey } from "@/lib/plans";
 
 /**
  * Transaction-scoped tenant access.
@@ -27,15 +29,16 @@ export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type Identity =
   | { kind: "clerk"; clerkUserId: string }
   | { kind: "legacy"; sessionToken: string };
-
 async function beginSession(tx: TenantTx, identity: Identity): Promise<void> {
-  if (identity.kind === "clerk") {
-    await tx.execute(sql`select app.begin_user_session(${identity.clerkUserId})`);
-    return;
-  }
-  // Verified by the database, never asserted by the caller.
-  await tx.execute(sql`select app.begin_legacy_session(${identity.sessionToken})`);
+  await timedRuntimeStage("tenant.begin_session", async () => {
+    if (identity.kind === "clerk") {
+      await tx.execute(sql`select app.begin_user_session(${identity.clerkUserId})`);
+      return;
+    }
+    await tx.execute(sql`select app.begin_legacy_session(${identity.sessionToken})`);
+  }, { identityKind: identity.kind });
 }
+
 
 export async function withUserSession<T>(
   identity: Identity,
@@ -61,12 +64,12 @@ export async function withTenant<T>(
   orgId: string,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
-  return db.transaction(async (tx) => {
+  return timedRuntimeStage("tenant.tenant_transaction", () => db.transaction(async (tx) => {
     await beginSession(tx, identity);
     await tx.execute(sql`select app.set_tenant_context(${orgId}::uuid)`);
     await tx.execute(sql`set local role workflow_app`);
     return fn(tx);
-  });
+  }), { identityKind: identity.kind });
 }
 
 /** Privileged (SECURITY DEFINER) path — bootstrap and admin calls only. */
@@ -130,6 +133,35 @@ export async function createOrganizationForIdentityWithType(
   });
 }
 
+export async function createInitialOrganizationForIdentityWithPlan(
+  identity: Identity,
+  name: string,
+  slugBase: string,
+  workspaceType: "personal" | "organization",
+  planKey: SelectablePlanKey,
+): Promise<{ orgId: string; created: boolean }> {
+  return withUserSession(identity, async (tx) => {
+    // Serialize the first-workspace decision so a double-click cannot create
+    // two tenants for one new identity.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(coalesce(app.current_user_id()::text, ''), 0))`);
+    const existing = await tx.execute<{ id: string }>(
+      sql`select org_id as id from public.organization_members where user_id = app.current_user_id() and status = 'active' order by created_at limit 1`,
+    );
+    if (existing.rows[0]?.id) return { orgId: existing.rows[0].id, created: false };
+
+    const rows = await tx.execute<{ id: string }>(
+      sql`select app.create_organization(${name}, ${slugBase}) as id`,
+    );
+    const orgId = rows.rows[0].id;
+    await tx.execute(sql`update public.organizations set workspace_type = ${workspaceType} where id = ${orgId}::uuid`);
+    if (planKey !== "free") {
+      // No billing provider is connected yet. Keep the active entitlement on
+      // Free and record the paid selection as a pending intent only.
+      await tx.execute(sql`update public.subscriptions set requested_plan_key = ${planKey}, status = 'pending', billing_state = 'pending_payment' where org_id = ${orgId}::uuid`);
+    }
+    return { orgId, created: true };
+  });
+}
 export async function createOrganizationForCurrentUser(
   clerkUserId: string,
   name: string,

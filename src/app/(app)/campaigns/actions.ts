@@ -7,13 +7,15 @@ import { z } from "zod";
 import { campaignRecords, campaigns, contacts, customFieldDefinitions, messageTemplates, messages } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { suggestMapping } from "@/lib/formAnalysis";
-import { analyzeFormUrl } from "@/lib/formProviders";
+import { analyzeFormUrl, providerForUrl } from "@/lib/formProviders";
+import { queueFormAnalysis } from "@/lib/formAnalysisJobs";
 import { parkRecordForReview, recomputeCampaignStats, resetFailedRecords } from "@/lib/submissionEngine";
 import { logActivity } from "@/lib/activity";
 import { incrementUsage } from "@/lib/usage";
 import { renderTemplate } from "@/lib/email";
 import { sql } from "drizzle-orm";
 import { can, inWorkspace } from "@/lib/data";
+import { assertPlanCapability, assertPlanLimit, PlanCapabilityError, PlanLimitError } from "@/lib/planLimits";
 import { enqueueEvent } from "@/lib/outbox";
 
 async function requireOrgContext() {
@@ -41,7 +43,10 @@ export async function createCampaignAction(formData: FormData) {
     redirect("/campaigns/new?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
 
-  const campaign = await inWorkspace({ user, org }, async (tx) => {
+  let campaign;
+  try {
+    campaign = await inWorkspace({ user, org }, async (tx) => {
+      await assertPlanLimit(tx, org.orgId, "activeCampaigns");
     const [created] = await tx
       .insert(campaigns)
       .values({
@@ -55,6 +60,10 @@ export async function createCampaignAction(formData: FormData) {
       .returning();
     return created;
   });
+  } catch (error) {
+    if (error instanceof PlanLimitError) redirect(`/campaigns/new?error=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
 
   await logActivity({ orgId: org.orgId, campaignId: campaign.id, type: "campaign_created", message: `Campaign "${campaign.name}" created` });
 
@@ -73,9 +82,21 @@ export async function analyzeFormAction(formData: FormData) {
     redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Enter a valid, authorized form URL starting with http(s)://"));
   }
 
-  // Provider-routed analysis (SSRF policy inside): static HTML for plain
-  // forms, Playwright rendered-DOM for Google Forms. Never claims success
-  // when fields are ambiguous — diagnostics are surfaced, not hidden.
+  // Browser-required providers are durable work on the edge. The request only
+  // validates, authorizes and enqueues; a separate Node worker owns Chromium.
+  if (providerForUrl(formUrl) === "google") {
+    try {
+      const queued = await queueFormAnalysis({ user, org }, campaignId, formUrl);
+      if (!queued) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Campaign not found"));
+      revalidatePath(`/campaigns/${campaignId}`);
+      redirect(`/campaigns/${campaignId}?analysis=queued`);
+    } catch (err) {
+      redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(err instanceof Error ? err.message : "Could not queue form analysis"));
+    }
+  }
+
+  // Static standard forms can still be analyzed inline because they do not need
+  // a browser. Ambiguous results remain visible and are never marked ready.
   let analyzed: Awaited<ReturnType<typeof analyzeFormUrl>>;
   try {
     analyzed = await analyzeFormUrl(formUrl);
@@ -96,7 +117,7 @@ export async function analyzeFormAction(formData: FormData) {
 
       await tx
         .update(campaigns)
-        .set({ formUrl: analyzed.finalUrl, formDefinition: analyzed.fields, fieldMapping: suggested, status: "draft", updatedAt: new Date() })
+        .set({ formUrl: analyzed.finalUrl, formDefinition: analyzed.fields, fieldMapping: suggested, formAnalysisStatus: analyzed.diagnostics.length > 0 ? "needs_attention" : "ready", formAnalysisError: analyzed.diagnostics[0] ?? null, formAnalysisUpdatedAt: new Date(), status: "draft", updatedAt: new Date() })
         .where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
     });
 
@@ -147,7 +168,9 @@ export async function addContactsToCampaignAction(formData: FormData) {
   const campaignId = String(formData.get("campaignId"));
   const mode = String(formData.get("mode") ?? "selected");
 
-  const added = await inWorkspace({ user, org }, async (tx) => {
+  let added;
+  try {
+    added = await inWorkspace({ user, org }, async (tx) => {
     let contactIds: string[] = [];
     if (mode === "all") {
       const rows = await tx.select({ id: contacts.id }).from(contacts).where(and(eq(contacts.orgId, org.orgId), isNull(contacts.archivedAt)));
@@ -165,9 +188,14 @@ export async function addContactsToCampaignAction(formData: FormData) {
     const toInsert = contactIds.filter((id) => !existingSet.has(id));
 
     if (toInsert.length === 0) return 0;
+    await assertPlanLimit(tx, org.orgId, "contacts", toInsert.length);
     await tx.insert(campaignRecords).values(toInsert.map((contactId) => ({ orgId: org.orgId, campaignId, contactId, status: "queued" })));
     return toInsert.length;
   });
+  } catch (error) {
+    if (error instanceof PlanLimitError) redirect(`/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
   if (added > 0) {
     await logActivity({ orgId: org.orgId, campaignId, type: "contacts_added", message: `${added} contacts added to campaign` });
   }
@@ -181,23 +209,38 @@ export async function runCampaignAction(formData: FormData) {
   const { user, org } = await requireOrgContext();
   const campaignId = String(formData.get("campaignId"));
 
-  // Enqueue-only: records stay queued and the real worker
-  // (scripts/form-worker.mjs) claims them durably. Nothing is submitted
-  // synchronously inside this Server Action.
-  const queued = await inWorkspace({ user, org }, async (tx) => {
-    await tx.update(campaigns).set({ status: "running", updatedAt: new Date() }).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
-    const rows = await tx.execute<{ n: number }>(sql`
-      select count(*)::int as n from public.campaign_records
-       where campaign_id = ${campaignId}::uuid and status in ('queued', 'retrying')
-    `);
-    return rows.rows[0]?.n ?? 0;
-  });
+  // Enqueue-only: records stay queued and the real worker claims them durably.
+  let queued;
+  try {
+    queued = await inWorkspace({ user, org }, async (tx) => {
+      const campaignRows = await tx.execute<{ form_analysis_status: string; form_definition: unknown }>(sql`
+        select form_analysis_status, form_definition from public.campaigns
+        where id = ${campaignId}::uuid and org_id = ${org.orgId}::uuid limit 1
+      `);
+      const campaign = campaignRows.rows[0];
+      if (!campaign || campaign.form_analysis_status !== "ready") throw new Error("Analyze the authorized form successfully before running this campaign.");
+      const fields = Array.isArray(campaign.form_definition) ? campaign.form_definition as Array<{ pageIndex?: number; branchGroup?: string }> : [];
+      const dynamic = fields.some((field) => (field.pageIndex ?? 0) > 0 || Boolean(field.branchGroup));
+      if (dynamic) await assertPlanCapability(tx, org.orgId, "multi_page_forms");
+      const rows = await tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from public.campaign_records
+        where campaign_id = ${campaignId}::uuid and status in ('queued', 'retrying')
+      `);
+      await assertPlanLimit(tx, org.orgId, "submissionsPerMonth", rows.rows[0]?.n ?? 0);
+      await tx.update(campaigns).set({ status: "running", updatedAt: new Date() }).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
+      return rows.rows[0]?.n ?? 0;
+    });
+  } catch (error) {
+    if (error instanceof PlanLimitError || error instanceof PlanCapabilityError) {
+      redirect(`/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`);
+    }
+    redirect(`/campaigns/${campaignId}?error=${encodeURIComponent("Campaign could not be queued safely.")}`);
+  }
   await logActivity({ orgId: org.orgId, campaignId, type: "campaign_started", message: `Campaign run started — ${queued} record(s) queued for the submission worker` });
 
   revalidatePath(`/campaigns/${campaignId}`);
   redirect(`/campaigns/${campaignId}`);
 }
-
 export async function cancelCampaignAction(formData: FormData) {
   const { user, org } = await requireOrgContext();
   const campaignId = String(formData.get("campaignId"));

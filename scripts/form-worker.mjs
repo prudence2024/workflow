@@ -132,9 +132,10 @@ async function claimOne(client, campaignId) {
       campaignFilter = `and r.campaign_id = $1::uuid`;
     }
     const res = await client.query(
-      `select r.id, r.org_id, r.campaign_id, r.contact_id, r.attempts
+      `select r.id, r.org_id, r.campaign_id, r.contact_id, r.attempts, c.form_definition, o.plan_key
          from public.campaign_records r
          join public.campaigns c on c.id = r.campaign_id
+         join public.organizations o on o.id = r.org_id
         where c.status = 'running'
           ${campaignFilter}
           and (r.status = 'queued'
@@ -165,7 +166,7 @@ async function claimOne(client, campaignId) {
       [rec.contact_id],
     );
     await client.query("commit");
-    return { rec, campaign: camp.rows[0], contact: contact.rows[0] ?? null };
+    return { rec, campaign: { ...camp.rows[0], plan_key: rec.plan_key }, contact: contact.rows[0] ?? null };
   } catch (err) {
     await client.query("rollback").catch(() => {});
     throw err;
@@ -254,166 +255,153 @@ async function detectChallenge(page) {
   });
 }
 
+const MAX_FORM_STEPS = 25;
+
+function isDynamicFormDefinition(definition) {
+  return Array.isArray(definition) && definition.some((field) => Number(field?.pageIndex ?? 0) > 0 || Boolean(field?.branchGroup));
+}
+
+function isPaidMultiPagePlan(planKey) {
+  return planKey === "pro" || planKey === "plus" || planKey === "business";
+}
+
+async function visibleSnapshot(page) {
+  return page.evaluate(() => {
+    const norm = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const visible = (element) => { const style = getComputedStyle(element); return style.display !== "none" && style.visibility !== "hidden" && !element.hasAttribute("aria-hidden"); };
+    const items = Array.from(document.querySelectorAll('div[role="listitem"]')).filter(visible).map((li) => {
+      const controls = Array.from(li.querySelectorAll("input, textarea, [role=radio], [role=checkbox], [role=listbox]"));
+      const first = controls[0];
+      const providerFieldId = controls.map((control) => control.getAttribute("name")).find((name) => name?.startsWith("entry.")) ?? null;
+      return { label: norm(li.textContent).replace(/\s*\*.*$/, "").slice(0, 120) || "Unnamed question", required: /\*/.test(norm(li.textContent).slice(0, 125)), type: first?.getAttribute("type") || first?.getAttribute("role") || (first?.tagName.toLowerCase() ?? "unknown"), providerFieldId, options: Array.from(li.querySelectorAll('[role=radio], [role=checkbox], [role=option]')).map((option) => norm(option.textContent || option.getAttribute("aria-label"))).filter(Boolean).slice(0, 50) };
+    });
+    const controls = Array.from(document.querySelectorAll('[role=button], button')).filter(visible).map((element) => norm(element.textContent || element.getAttribute("aria-label"))).filter(Boolean);
+    const sectionTitle = norm(document.querySelector('[role=heading], h1, h2, h3')?.textContent).slice(0, 120) || "Form section";
+    const body = norm(document.body?.innerText).slice(0, 5000);
+    return { items, hasNext: controls.some((text) => /^(next|continue|proceed|go to next)$/i.test(text)), hasSubmit: controls.some((text) => /^(submit|send|finish|complete)$/i.test(text)), sectionTitle, pageSignature: `${location.href}|${sectionTitle}|${items.map((item) => `${item.providerFieldId ?? item.label}:${item.type}`).join("|")}`.slice(0, 800), challenge: /captcha|recaptcha|verify you are human|one[- ]time password|\botp\b|sign in to continue/i.test(body) || Boolean(document.querySelector('iframe[src*="recaptcha"], [aria-label*="CAPTCHA" i]')) };
+  });
+}
+
+function mappingForField(field, mapping) {
+  return mapping[field.name] ?? mapping[field.providerFieldId] ?? mapping[field.label] ?? mapping[field.label?.toLowerCase()];
+}
+
+async function fillVisibleField(page, field, value) {
+  return page.evaluate(({ label, providerFieldId, value: answer }) => {
+    const norm = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const items = Array.from(document.querySelectorAll('div[role="listitem"]'));
+    const item = items.find((candidate) => {
+      if (candidate.querySelector(`[name="${providerFieldId ?? "__missing__"}"]`)) return true;
+      return norm(candidate.textContent).startsWith(norm(label));
+    });
+    if (!item) return "missing";
+    const input = item.querySelector('textarea, input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], input:not([type])');
+    if (input) {
+      input.focus();
+      const setter = Object.getOwnPropertyDescriptor(input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, answer);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return "filled";
+    }
+    const options = Array.from(item.querySelectorAll('[role="radio"], [role="checkbox"], [role="option"]'));
+    const choice = options.find((option) => norm(option.textContent || option.getAttribute("aria-label")) === norm(answer));
+    if (choice) { choice.click(); return "filled"; }
+    return "unsupported";
+  }, { label: field.label, providerFieldId: field.providerFieldId ?? null, value });
+}
+
+async function clickNavigation(page, kind) {
+  return page.evaluate((wanted) => {
+    const norm = (text) => String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const buttons = Array.from(document.querySelectorAll('[role="button"], button'));
+    const patterns = wanted === "submit" ? /^(submit|send|finish|complete)$/ : /^(next|continue|proceed|go to next)$/;
+    const button = buttons.find((candidate) => patterns.test(norm(candidate.textContent || candidate.getAttribute("aria-label"))));
+    if (!button) return false;
+    button.click();
+    return true;
+  }, kind);
+}
+
 async function processRecord(browser, job) {
   const { rec, campaign, contact } = job;
   const attemptId = `${RUN_ID}-a${rec.attempts + 1}`;
-  const fail = async (message, category, backoff) => {
-    if (backoff && rec.attempts + 1 < MAX_ATTEMPTS) {
+  if (isDynamicFormDefinition(campaign.form_definition) && !isPaidMultiPagePlan(campaign.plan_key)) {
+    return { status: "needs_attention", message: "Multi-page forms are available on Pro and Plus. No destination navigation was attempted.", failureCategory: "policy" };
+  }
+  const fail = async (message, category, retryable = false) => {
+    if (retryable && rec.attempts + 1 < MAX_ATTEMPTS) {
       const mins = 2 ** rec.attempts;
-      const at = new Date(Date.now() + mins * 60_000).toISOString();
-      return { status: "retrying", message: `${message} (retry in ~${mins}m)`, failureCategory: category, nextAttemptAt: at };
+      return { status: "retrying", message: `${message} (retry in ~${mins}m)`, failureCategory: category, nextAttemptAt: new Date(Date.now() + mins * 60_000).toISOString() };
     }
     return { status: "failed", message, failureCategory: category ?? "exhausted" };
   };
-
-  if (!contact) {
-    return fail("Contact no longer exists — cannot submit.", "invalid_data", false);
-  }
+  if (!contact) return fail("Contact no longer exists — cannot submit.", "invalid_data");
   let formUrl;
-  try {
-    formUrl = await assertUrlAllowed(campaign.form_url);
-  } catch (err) {
-    return fail(`Destination URL rejected by safety policy: ${err.message}`, "policy", false);
-  }
+  try { formUrl = await assertUrlAllowed(campaign.form_url); } catch (err) { return fail(`Destination URL rejected by safety policy: ${err.message}`, "policy"); }
   const fields = campaign.form_definition ?? [];
   const mapping = campaign.field_mapping ?? {};
-  if (fields.length === 0) {
-    return fail("Campaign has no analyzed form definition — analyze the form first.", "config", false);
-  }
-  // Build values; required-field gaps fail WITHOUT launching a browser.
+  if (fields.length === 0) return fail("Campaign has no analyzed form definition — analyze the form first.", "config");
   const values = {};
-  for (const f of fields) {
-    const col = mapping[f.name];
-    const v = col ? contactValue(contact, col).trim() : "";
-    if (f.required && !v) {
-      return fail(`Required field '${f.label}' has no mapped contact value.`, "validation", false);
-    }
-    if (f.type === "email" && v && !EMAIL_RE.test(v)) {
-      return fail(`Invalid email '${v}' for '${f.label}'.`, "validation", false);
-    }
-    if (v) values[f.name] = v;
+  for (const field of fields) {
+    const column = mappingForField(field, mapping);
+    const value = column ? contactValue(contact, column).trim() : "";
+    if (field.required && !value && (field.pageIndex ?? 0) === 0) return fail(`Required field '${field.label}' has no mapped contact value.`, "validation");
+    if (field.type === "email" && value && !EMAIL_RE.test(value)) return fail(`Invalid email for '${field.label}'.`, "validation");
+    if (value) values[field.name] = value;
   }
 
-    const page = await browser.newPage();
-  await page.route("**/*", async (route) => {
-    try {
-      await assertUrlAllowed(route.request().url());
-      await route.continue();
-    } catch {
-      await route.abort();
-    }
-  });
-  let submitted = false;
+  const page = await browser.newPage();
+  await page.route("**/*", async (route) => { try { await assertUrlAllowed(route.request().url()); await route.continue(); } catch { await route.abort(); } });
+  let finalSubmissionAttempted = false;
+  const visited = new Set();
+  const sectionPath = [];
   try {
-    await page.goto(formUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForSelector("form", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(2000);
-
-    const pre = await detectChallenge(page);
-    if (pre) return { status: "human_action_required", message: pre };
-
-    for (const f of fields) {
-      const v = values[f.name];
-      if (!v) continue;
-      const filled = await page.evaluate(
-        ({ label, value }) => {
-          const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
-          const li = Array.from(document.querySelectorAll('div[role="listitem"]'))
-            .find((el) => norm(el.textContent || "").startsWith(norm(label)));
-          if (!li) return "missing";
-          const text = li.querySelector('input[type="text"], input:not([type])');
-          if (text) {
-            text.focus();
-            document.execCommand("selectAll", false);
-            document.execCommand("insertText", false, value);
-            text.dispatchEvent(new Event("input", { bubbles: true }));
-            text.dispatchEvent(new Event("change", { bubbles: true }));
-            return "filled";
-          }
-          const area = li.querySelector("textarea");
-          if (area) {
-            area.focus();
-            area.value = value;
-            area.dispatchEvent(new Event("input", { bubbles: true }));
-            return "filled";
-          }
-          return "unsupported";
-        },
-        { label: f.label, value: v },
-      );
-      if (filled === "missing") {
-        return { status: "needs_attention", message: `Question '${f.label}' is no longer on the destination form — parked for human review.` };
+    await page.goto(formUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForSelector("form", { timeout: 20_000 }).catch(() => {});
+    await page.waitForTimeout(1_500);
+    for (let step = 0; step < MAX_FORM_STEPS; step += 1) {
+      const snapshot = await visibleSnapshot(page);
+      if (snapshot.challenge) return { status: "human_action_required", message: "Destination presented a verification or authentication challenge." };
+      if (visited.has(snapshot.pageSignature)) return { status: "needs_attention", message: "The destination repeated a form section unexpectedly; manual review is required.", pagesVisited: step, finalStep: step, sectionPath };
+      visited.add(snapshot.pageSignature);
+      sectionPath.push(snapshot.sectionTitle);
+      for (const visible of snapshot.items) {
+        const known = fields.find((field) => (visible.providerFieldId && field.providerFieldId === visible.providerFieldId) || field.label.toLowerCase() === visible.label.toLowerCase());
+        const field = known ?? { name: visible.providerFieldId ?? `dynamic_${step}_${snapshot.items.indexOf(visible)}`, label: visible.label, type: visible.type, required: visible.required, providerFieldId: visible.providerFieldId, pageIndex: step, sectionTitle: snapshot.sectionTitle };
+        const column = mappingForField(field, mapping);
+        const value = column ? contactValue(contact, column).trim() : values[field.name] ?? "";
+        if (field.required && !value) return { status: "needs_attention", message: `Required field '${field.label}' on '${snapshot.sectionTitle}' has no mapped contact value.`, pagesVisited: step + 1, finalStep: step, sectionPath };
+        if (!value) continue;
+        if (field.type === "email" && !EMAIL_RE.test(value)) return fail(`Invalid email for '${field.label}'.`, "validation");
+        const result = await fillVisibleField(page, field, value);
+        if (result === "missing") return { status: "needs_attention", message: `Question '${field.label}' changed on the destination form.`, pagesVisited: step + 1, finalStep: step, sectionPath };
+        if (result === "unsupported") return { status: "human_action_required", message: `Question '${field.label}' needs an unsupported control.`, pagesVisited: step + 1, finalStep: step, sectionPath };
       }
-      if (filled === "unsupported") {
-        return { status: "human_action_required", message: `Question '${f.label}' needs a control the worker cannot fill — human action required.` };
+      if (snapshot.hasSubmit) {
+        finalSubmissionAttempted = true;
+        const clicked = await clickNavigation(page, "submit");
+        if (!clicked) return { status: "needs_attention", message: "The final Submit control disappeared before it could be attempted.", pagesVisited: step + 1, finalStep: step, sectionPath };
+        const markers = ["your response has been recorded", "submit another response"];
+        let confirmed = false;
+        try { await page.waitForFunction((wanted) => { const body = (document.body.innerText || "").toLowerCase(); return wanted.some((marker) => body.includes(marker)); }, markers, { timeout: 30_000 }); confirmed = true; } catch { confirmed = false; }
+        if (!confirmed) return { status: "needs_attention", message: "Final submission was attempted, but no explicit destination confirmation was observed.", pagesVisited: step + 1, finalStep: step, sectionPath };
+        const excerpt = ((await page.evaluate(() => document.body.innerText)) || "").replace(/\s+/g, " ").trim().slice(0, 200);
+        return { status: "successful", message: "Submitted and confirmed by the destination.", evidence: { provider: "google", submittedAt: new Date().toISOString(), finalUrl: page.url(), confirmationType: "recorded-confirmation", confirmationExcerpt: excerpt, workerRunId: RUN_ID, attemptId, pagesVisited: step + 1, finalStep: step, sectionPath } };
       }
+      if (!snapshot.hasNext) return { status: "needs_attention", message: "No Next or final Submit control was found; manual review is required.", pagesVisited: step + 1, finalStep: step, sectionPath };
+      const before = snapshot.pageSignature;
+      if (!await clickNavigation(page, "next")) return { status: "needs_attention", message: "The form section has no usable Next control.", pagesVisited: step + 1, finalStep: step, sectionPath };
+      try { await page.waitForFunction((oldSignature) => { const title = (document.querySelector('[role="heading"], h1, h2, h3')?.textContent || "").replace(/\s+/g, " ").trim(); const labels = Array.from(document.querySelectorAll('div[role="listitem"]')).map((item) => (item.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120)).join("|"); return `${location.href}|${title}|${labels}`.slice(0, 800) !== oldSignature; }, before, { timeout: 10_000 }); } catch { return { status: "needs_attention", message: "The form did not progress after Next; manual review is required.", pagesVisited: step + 1, finalStep: step, sectionPath }; }
     }
-
-    const clicked = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('[role="button"]'))
-        .find((el) => (el.textContent || "").trim().toLowerCase() === "submit");
-      if (!btn) return false;
-      btn.click();
-      return true;
-    });
-    if (!clicked) {
-      return { status: "needs_attention", message: "No Submit control found on the destination form — parked for human review." };
-    }
-
-    const markers = ["your response has been recorded", "submit another response"];
-    let confirmed = false;
-    try {
-      await page.waitForFunction(
-        (ms) => {
-          const body = (document.body.innerText || "").toLowerCase();
-          return ms.some((m) => body.includes(m));
-        },
-        markers,
-        { timeout: 30000 },
-      );
-      confirmed = true;
-    } catch {
-      confirmed = false;
-    }
-    submitted = true;
-    if (!confirmed) {
-      const late = await detectChallenge(page);
-      if (late) return { status: "human_action_required", message: late };
-      const body = ((await page.evaluate(() => document.body.innerText)) || "").toLowerCase();
-      if (body.includes("required") && body.includes("question")) {
-        return fail("Destination rejected the submission (required question unanswered).", "validation", false);
-      }
-      return { status: "needs_attention", message: "Submitted, but no explicit confirmation was observed — parked for human review." };
-    }
-    const excerpt = ((await page.evaluate(() => document.body.innerText)) || "")
-      .replace(/\s+/g, " ").trim().slice(0, 200);
-    return {
-      status: "successful",
-      message: "Submitted and confirmed by the destination.",
-      evidence: {
-        provider: "google",
-        submittedAt: new Date().toISOString(),
-        finalUrl: page.url(),
-        confirmationType: "recorded-confirmation",
-        confirmationExcerpt: excerpt,
-        workerRunId: RUN_ID,
-        attemptId,
-      },
-    };
+    return { status: "needs_attention", message: `Form exceeded the maximum of ${MAX_FORM_STEPS} sections; manual review is required.`, pagesVisited: MAX_FORM_STEPS, finalStep: MAX_FORM_STEPS - 1, sectionPath };
   } catch (err) {
-    const msg = err.message ?? String(err);
-    if (submitted) {
-      return { status: "needs_attention", message: `Submission outcome is ambiguous after submit — manual review required: ${msg.slice(0, 160)}` };
-    }
-    if (/timeout|net::|navigation/i.test(msg)) {
-      return fail(`Transient browser/network failure: ${msg.slice(0, 160)}`, "network_failure", true);
-    }
-    return { status: "needs_attention", message: `Unexpected worker error — parked for human review: ${msg.slice(0, 160)}` };
-  } finally {
-    await page.close().catch(() => {});
-  }
+    const message = err.message ?? String(err);
+    if (finalSubmissionAttempted) return { status: "needs_attention", message: `Submission outcome is ambiguous after the final attempt — manual review required: ${message.slice(0, 160)}` };
+    if (/timeout|net::|navigation/i.test(message)) return fail(`Transient browser/network failure: ${message.slice(0, 160)}`, "network_failure", true);
+    return { status: "needs_attention", message: `Unexpected worker error — parked for human review: ${message.slice(0, 160)}` };
+  } finally { await page.close().catch(() => {}); }
 }
-
 function resolveChrome() {
   if (process.env.PLAYWRIGHT_CHROME_PATH && existsSync(process.env.PLAYWRIGHT_CHROME_PATH)) {
     return process.env.PLAYWRIGHT_CHROME_PATH;
@@ -452,7 +440,7 @@ async function main() {
     const onlyRecord = flag("--record");
     const onlyCampaign = flag("--campaign");
     const limit = Number(flag("--limit") ?? (onlyRecord ? 1 : 10));
-    const browser = dry ? null : await chromium.launch({ executablePath: resolveChrome() });
+    let browser = null;
     try {
       let done = 0;
       const touchedCampaigns = new Set();
@@ -464,8 +452,9 @@ async function main() {
           try {
             await client.query("set local role workflow_worker");
             const r = await client.query(
-              `select r.id, r.org_id, r.campaign_id, r.contact_id, r.attempts
+              `select r.id, r.org_id, r.campaign_id, r.contact_id, r.attempts, c.form_definition, o.plan_key
                  from public.campaign_records r join public.campaigns c on c.id = r.campaign_id
+                 join public.organizations o on o.id = r.org_id
                 where r.id = $1::uuid and c.status = 'running'
                   and r.status in ('queued','retrying') for update of r skip locked`,
               [onlyRecord],
@@ -479,7 +468,7 @@ async function main() {
               const camp = await client.query(`select id, form_url, form_definition, field_mapping from public.campaigns where id=$1::uuid`, [rec.campaign_id]);
               const contact = await client.query(`select id, first_name, last_name, email, phone, company, address, custom_fields from public.contacts where id=$1::uuid`, [rec.contact_id]);
               await client.query("commit");
-              job = { rec, campaign: camp.rows[0], contact: contact.rows[0] ?? null };
+              job = { rec, campaign: { ...camp.rows[0], plan_key: rec.plan_key }, contact: contact.rows[0] ?? null };
             } else {
               await client.query("rollback");
             }
@@ -492,6 +481,14 @@ async function main() {
         }
         if (!job) break;
         touchedCampaigns.add(job.rec.campaign_id);
+        const blockedByPlan = isDynamicFormDefinition(job.campaign?.form_definition) && !isPaidMultiPagePlan(job.campaign?.plan_key);
+        if (blockedByPlan) {
+          const outcome = { status: "needs_attention", message: "Multi-page forms are available on Pro and Plus. No destination navigation was attempted.", failureCategory: "policy" };
+          await writeOutcome(client, job.rec, outcome);
+          console.log(`${outcome.status}: record ${job.rec.id} — ${outcome.message}`);
+          done += 1;
+          continue;
+        }
         if (dry) {
           console.log(`dry-run: would process record ${job.rec.id} (attempt ${job.rec.attempts + 1})`);
           await client.query("begin");
@@ -508,6 +505,7 @@ async function main() {
           done += 1;
           continue;
         }
+        if (!browser) browser = await chromium.launch({ executablePath: resolveChrome() });
         const outcome = await processRecord(browser, job);
         await writeOutcome(client, job.rec, outcome);
         console.log(`${outcome.status}: record ${job.rec.id} — ${outcome.message.slice(0, 120)}`);

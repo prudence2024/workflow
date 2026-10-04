@@ -129,7 +129,10 @@ export const organizations = pgTable("organizations", {
    */
   workspaceType: text("workspace_type").notNull().default("organization"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  check("organizations_plan_key_check", sql`${table.planKey} in ('free','pro','plus','business')`),
+  check("organizations_workspace_type_check", sql`${table.workspaceType} in ('personal','organization')`),
+]);
 
 export const organizationMembers = pgTable(
   "organization_members",
@@ -286,12 +289,58 @@ export const campaigns = pgTable("campaigns", {
   formUrl: text("form_url"),
   formDefinition: jsonb("form_definition").$type<FormField[]>().default([]),
   fieldMapping: jsonb("field_mapping").$type<Record<string, string>>().default({}),
+  formAnalysisStatus: text("form_analysis_status").notNull().default("idle"),
+  formAnalysisError: text("form_analysis_error"),
+  formAnalysisUpdatedAt: timestamp("form_analysis_updated_at", { withTimezone: true }),
   stats: jsonb("stats").$type<Record<string, number>>().default({}),
   createdByUserId: uuid("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type FormAnalysisJobStatus =
+  | "queued"
+  | "processing"
+  | "ready"
+  | "needs_attention"
+  | "failed"
+
+/** Durable, idempotent hand-off from the edge request to the Node browser worker. */
+export const formAnalysisJobs = pgTable(
+  "form_analysis_jobs",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    formUrl: text("form_url").notNull(),
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    lastError: text("last_error"),
+    diagnostics: jsonb("diagnostics").$type<string[]>().notNull().default([]),
+    result: jsonb("result").$type<Record<string, unknown>>().notNull().default({}),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockedBy: text("locked_by"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "form_analysis_job_status_check",
+      sql`${table.status} in ('queued','processing','ready','needs_attention','failed')`,
+    ),
+    index("form_analysis_job_claim_idx").on(table.status, table.nextAttemptAt),
+    index("form_analysis_job_campaign_idx").on(table.orgId, table.campaignId),
+  ],
+);
 export type FormField = {
   name: string;
   label: string;
@@ -307,7 +356,12 @@ export type FormField = {
   /** Provider-native field id (Google entry.<digits>) when available. */
   providerFieldId?: string;
   /** Stable locator hint, e.g. { kind: "google-question", label }. */
-  selector?: { kind: string; label?: string; index?: number };
+  selector?: { kind: string; label?: string; index?: number; providerFieldId?: string };
+  /** Optional section metadata; runtime visibility remains authoritative. */
+  pageIndex?: number;
+  sectionId?: string;
+  sectionTitle?: string;
+  branchGroup?: string;
 };
 
 export const campaignRecords = pgTable("campaign_records", {
@@ -472,9 +526,16 @@ export const subscriptions = pgTable("subscriptions", {
     .unique(),
   planKey: text("plan_key").notNull().default("free"),
   status: text("status").notNull().default("active"),
+  /** Paid selection is only an intent until a billing provider confirms it. */
+  requestedPlanKey: text("requested_plan_key"),
+  billingState: text("billing_state").notNull().default("active"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  check("subscriptions_plan_key_check", sql`${table.planKey} in ('free','pro','plus','business')`),
+  check("subscriptions_requested_plan_key_check", sql`${table.requestedPlanKey} is null or ${table.requestedPlanKey} in ('free','pro','plus','business')`),
+  check("subscriptions_billing_state_check", sql`${table.billingState} in ('active','pending_payment','past_due','cancelled')`),
+]);
 
 // ---------------------------------------------------------------------------
 // Durable outbox — provider dispatch and idempotency
