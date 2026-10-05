@@ -22,7 +22,7 @@ export default function SecurityPage() {
       </div>
       <div className="mt-10 grid gap-4 sm:grid-cols-2">
         {PRINCIPLES.map((p) => (
-          <div key={p.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
+          <div key={p.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <p className="font-display text-[14.5px] font-semibold text-[var(--color-ink)]">{p.title}</p>
             <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-muted)]">{p.body}</p>
           </div>

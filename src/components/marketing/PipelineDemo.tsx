@@ -62,17 +62,20 @@ export function PipelineDemo() {
   const [active, setActive] = useState(0);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (media.matches) return;
     const id = setInterval(() => setActive((v) => (v + 1) % STEPS.length), 3200);
     return () => clearInterval(id);
   }, []);
 
   return (
-    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-lg)] sm:p-4">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)] sm:p-4">
       <div className="flex flex-wrap gap-1.5 border-b border-[var(--color-border)] pb-3">
         {STEPS.map((step, i) => (
           <button
             key={step.key}
             onClick={() => setActive(i)}
+            aria-pressed={i === active}
             className={cn(
               "flex-1 min-w-[120px] rounded-[var(--radius-sm)] px-3 py-2 text-left transition-colors",
               i === active ? "bg-[var(--color-brand-soft)]" : "hover:bg-[var(--color-canvas)]",
@@ -131,7 +134,7 @@ export function PipelineDemo() {
             <Metric label="Successful" value={active >= 3 ? "233" : "0"} tone="success" />
             <Metric label="Needs attention" value={active >= 3 ? "8" : "0"} tone="warning" />
           </div>
-          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white">
+          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
             <div
               className="h-full rounded-full bg-[var(--color-brand)] transition-[width] duration-700"
               style={{ width: `${((active + 1) / STEPS.length) * 100}%` }}
@@ -146,7 +149,7 @@ export function PipelineDemo() {
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: "success" | "warning" }) {
   return (
-    <div className="rounded-[var(--radius-sm)] bg-white px-3 py-2.5">
+    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2.5">
       <p className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-muted)]">{label}</p>
       <p
         className={cn(

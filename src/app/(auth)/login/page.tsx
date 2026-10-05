@@ -46,7 +46,10 @@ export default async function LoginPage({
         </p>
         <div className="mt-7">
           {/* routing="hash" renders the flow inline so /login keeps hosting it. */}
-          <SignIn routing="hash" forceRedirectUrl="/dashboard" />
+          <SignIn
+            routing="hash"
+            forceRedirectUrl={`/auth/complete?next=${encodeURIComponent("/dashboard")}`}
+          />
         </div>
       </div>
     );

@@ -9,10 +9,10 @@ const variantClasses: Record<Variant, string> = {
   primary:
     "bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] shadow-[var(--shadow-xs)] disabled:opacity-50",
   secondary:
-    "bg-[var(--color-ink)] text-white hover:bg-black disabled:opacity-50",
+    "bg-[var(--color-ink)] text-[var(--color-canvas)] hover:bg-[var(--color-ink-soft)] disabled:opacity-50",
   outline:
-    "border border-[var(--color-border-strong)] bg-white text-[var(--color-ink)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)] disabled:opacity-50",
-  ghost: "text-[var(--color-ink-soft)] hover:bg-black/[0.04] hover:text-[var(--color-ink)] disabled:opacity-50",
+    "border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-ink)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)] disabled:opacity-50",
+  ghost: "text-[var(--color-ink-soft)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)] disabled:opacity-50",
   danger: "bg-[var(--color-danger)] text-white hover:brightness-110 disabled:opacity-50",
 };
 

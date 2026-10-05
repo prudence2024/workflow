@@ -48,6 +48,39 @@
   --radius-lg: 18px;
 }
 
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #101a2b;
+  --color-surface: #16243a;
+  --color-surface-raised: #1b2c45;
+  --color-ink: #f2f6fc;
+  --color-ink-soft: #c2cee0;
+  --color-muted: #93a4bb;
+  --color-border: #2b3d57;
+  --color-border-strong: #46607e;
+  --color-brand: #60a5fa;
+  --color-brand-strong: #3b82f6;
+  --color-brand-soft: #1e3a61;
+  --color-navy: #0b1f3b;
+  --color-navy-soft: #263b58;
+  --color-accent: #2dd4bf;
+  --color-accent-strong: #14b8a6;
+  --color-accent-soft: #123e43;
+  --color-success: #5bd69a;
+  --color-success-soft: #123f31;
+  --color-warning: #f7bd67;
+  --color-warning-soft: #4a3518;
+  --color-danger: #ff8f86;
+  --color-danger-soft: #4d2428;
+  --color-info: #85b9f5;
+  --color-info-soft: #1c3856;
+  --shadow-brand: 0 10px 30px rgba(59, 130, 246, 0.24);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.38);
+}
+
 * {
   border-color: var(--color-border);
 }
@@ -60,6 +93,15 @@ body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-body);
+}
+
+button, a, select, input, textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -91,8 +133,29 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .grain-noise {
-  background-image: radial-gradient(rgba(11, 14, 20, 0.05) 1px, transparent 1px);
+  background-image: radial-gradient(color-mix(in srgb, var(--color-ink) 6%, transparent) 1px, transparent 1px);
   background-size: 18px 18px;
+}
+
+.reveal {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.reveal[data-reveal-ready="true"]:not([data-reveal-visible="true"]) {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+.reveal[data-reveal-ready="true"] {
+  transition: opacity 520ms cubic-bezier(0.16, 1, 0.3, 1), transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal[data-reveal-ready="true"]:not([data-reveal-visible="true"]) {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes fade-up {

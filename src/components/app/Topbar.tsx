@@ -4,6 +4,7 @@ import { RoleBadge } from "@/components/ui/Status";
 import type { OrgMembership, CurrentUser } from "@/lib/auth";
 import { MobileSidebar } from "@/components/app/MobileSidebar";
 import { canonicalPlanKey } from "@/lib/plans";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 export function Topbar({
   user,
@@ -17,7 +18,7 @@ export function Topbar({
   isPlatformAdmin: boolean;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex h-16 min-w-0 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-white/90 px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 min-w-0 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_92%,transparent)] px-4 backdrop-blur-md sm:px-6">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <MobileSidebar isPlatformAdmin={isPlatformAdmin} />
         <OrgSwitcher orgs={orgs} currentOrgId={currentOrg.orgId} />
@@ -28,6 +29,7 @@ export function Topbar({
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-3">
+        <span className="hidden sm:inline-flex"><ThemeToggle compact /></span>
         <span className="hidden text-[12.5px] text-[var(--color-muted)] sm:inline">{canonicalPlanKey(currentOrg.planKey).toUpperCase()} plan</span>
         <UserMenu name={user.name} email={user.email} />
       </div>

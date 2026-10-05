@@ -49,7 +49,7 @@ export function Sidebar({ isPlatformAdmin, asMobile = false }: { isPlatformAdmin
   return (
     <aside
       className={cn(
-        "w-[228px] shrink-0 flex-col border-r border-[var(--color-border)] bg-white",
+        "w-[228px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]",
         // Desktop: stay pinned while page content scrolls; the nav area scrolls
         // internally when it exceeds the viewport. Mobile drawer keeps h-full
         // inside its fixed container (never sticky).

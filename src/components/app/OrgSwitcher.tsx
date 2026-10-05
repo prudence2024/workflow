@@ -16,7 +16,7 @@ export function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgMembership[]; cur
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-2.5 py-1.5 text-left hover:border-[var(--color-brand)]"
+        className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1.5 text-left hover:border-[var(--color-brand)]"
       >
         <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-[var(--color-ink)] text-[10.5px] font-semibold text-white">
           {initials(current?.orgName ?? "")}
@@ -29,7 +29,7 @@ export function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgMembership[]; cur
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 z-20 mt-2 w-64 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-md)]">
+          <div className="absolute left-0 z-20 mt-2 w-64 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-md)]">
             <p className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
               Workspaces
             </p>

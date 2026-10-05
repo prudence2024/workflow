@@ -99,7 +99,7 @@ export function WorkflowAiPanel() {
         Workflow AI
       </button>
       {open && (
-        <section aria-label="Workflow AI assistant" className="fixed bottom-20 right-5 z-40 flex w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)]">
+        <section aria-label="Workflow AI assistant" className="fixed bottom-20 right-5 z-40 flex w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-lg)]">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
             <div><p className="font-display text-sm font-semibold">Workflow AI</p><p className="text-[11px] text-[var(--color-muted)]">Tenant-scoped, proposal-first operations help</p></div>
             <button type="button" aria-label="Close Workflow AI" onClick={() => setOpen(false)} className="text-xl text-[var(--color-muted)]">×</button>

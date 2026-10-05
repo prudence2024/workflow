@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { acceptInvitationAction, createWorkspaceAction } from "@/app/onboarding/actions";
+import { WorkspaceTypeFields } from "@/app/onboarding/WorkspaceTypeFields";
 import { Button, LinkButton } from "@/components/ui/Button";
-import { FieldGroup, Input, Label, HelpText } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Surfaces";
-import { getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { authMode, getCurrentUser, getUserOrganizations, hasClerkSessionHint } from "@/lib/auth";
 import { pendingInvitationsForEmail } from "@/lib/data";
 import { PLAN_ORDER, PLANS, parseSelectablePlanKey, type SelectablePlanKey } from "@/lib/plans";
 
@@ -16,17 +16,27 @@ export default async function OnboardingPage({
 }: {
   searchParams: Promise<{ error?: string; step?: string; plan?: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
   const { error, step: rawStep, plan: rawPlan } = await searchParams;
   const step = rawStep === "workspace" ? "workspace" : rawStep === "billing" ? "billing" : "plan";
   const plan: SelectablePlanKey = parseSelectablePlanKey(rawPlan);
+  const user = await getCurrentUser();
+  if (!user) {
+    const next = `/onboarding?step=${step}${plan !== "free" ? `&plan=${plan}` : ""}`;
+    if (authMode() === "clerk" && await hasClerkSessionHint()) {
+      redirect(`/auth/complete?next=${encodeURIComponent(next)}`);
+    }
+    redirect("/login");
+  }
+  if (!user.profileComplete) {
+    const next = `/onboarding?step=${step}${plan !== "free" ? `&plan=${plan}` : ""}`;
+    redirect(`/profile-completion?next=${encodeURIComponent(next)}`);
+  }
   const orgs = await getUserOrganizations(user);
   const invites = await pendingInvitationsForEmail(user.email);
 
   return (
     <div className="grid min-h-screen place-items-center bg-[var(--color-canvas)] px-6 py-10">
-      <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-8 shadow-[var(--shadow-md)]">
+      <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-[var(--shadow-md)]">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">Get started</p>
         <h1 className="mt-2 font-display text-[22px] font-semibold text-[var(--color-ink)]">
           {orgs.length > 0 ? "Create another workspace" : "Set up your workspace"}
@@ -88,34 +98,7 @@ export default async function OnboardingPage({
         <form action={createWorkspaceAction} className="mt-6 space-y-4">
           <input type="hidden" name="step" value={step} />
           <input type="hidden" name="plan" value={plan} />
-          <FieldGroup>
-            <Label>How will you use Workflow?</Label>
-            <div className="grid gap-2">
-              <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] p-3 has-checked:border-[var(--color-brand)]">
-                <input type="radio" name="accountType" value="personal" defaultChecked className="mt-1" />
-                <span>
-                  <span className="block text-[13.5px] font-semibold text-[var(--color-ink)]">For myself</span>
-                  <span className="block text-[12.5px] text-[var(--color-muted)]">
-                    A personal workspace — still a real tenant, convertible to a team later.
-                  </span>
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] p-3 has-checked:border-[var(--color-brand)]">
-                <input type="radio" name="accountType" value="organization" className="mt-1" />
-                <span>
-                  <span className="block text-[13.5px] font-semibold text-[var(--color-ink)]">For an organization</span>
-                  <span className="block text-[12.5px] text-[var(--color-muted)]">
-                    A team workspace you own — invite teammates after setup.
-                  </span>
-                </span>
-              </label>
-            </div>
-          </FieldGroup>
-          <FieldGroup>
-            <Label htmlFor="name">Organization name</Label>
-            <Input id="name" name="name" placeholder="Grace Community Church" />
-            <HelpText>Only needed for an organization. Personal workspaces are named for you automatically.</HelpText>
-          </FieldGroup>
+          <WorkspaceTypeFields />
           <Button type="submit" className="w-full" size="lg">Continue with workspace setup</Button>
         </form>
         )}

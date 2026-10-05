@@ -34,8 +34,8 @@ export function MobileSidebar({ isPlatformAdmin }: { isPlatformAdmin: boolean })
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
-          <div className="relative z-10 flex h-full w-[240px] max-w-[85vw] flex-col bg-white shadow-xl">
+          <div className="absolute inset-0 bg-[rgba(4,12,24,0.42)]" onClick={() => setOpen(false)} />
+          <div className="relative z-10 flex h-full w-[240px] max-w-[85vw] flex-col bg-[var(--color-surface)] shadow-xl">
             <button
               onClick={() => setOpen(false)}
               className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-[var(--color-muted)]"

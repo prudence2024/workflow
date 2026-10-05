@@ -19,7 +19,7 @@ export function Section({
 
 export function Eyebrow({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-3 py-1 text-[11.5px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">
+    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-1 text-[11.5px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">
       <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]" />
       {children}
     </div>

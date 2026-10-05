@@ -30,7 +30,7 @@ export default async function InvitePage({
 
   return (
     <div className="grid min-h-screen place-items-center bg-[var(--color-canvas)] px-6">
-      <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-8 text-center shadow-[var(--shadow-md)]">
+      <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-[var(--shadow-md)]">
         {!invitation || !org ? (
           <>
             <h1 className="font-display text-[20px] font-semibold text-[var(--color-ink)]">Invitation not found</h1>

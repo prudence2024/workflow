@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { analysisStatusMessage } from "@/lib/formAnalysisJobs";
 import { canonicalPlanKey, hasCapability, isLegacyPlanKey, isSelectablePlanKey, parsePlanKey, parseSelectablePlanKey, PLAN_ORDER, PLANS, selectablePlanKeySchema } from "@/lib/plans";
 import { isHighImpactIntent, isPromptInjectionAttempt } from "@/lib/ai/policy";
+import { parseWorkspaceInput } from "@/lib/workspaceValidation";
+import {
+  decideSessionCompletion,
+  SESSION_COMPLETION_MAX_ATTEMPTS,
+} from "@/lib/sessionCompletion";
 
 describe("plan selection and analysis boundary", () => {
   it("accepts only canonical plan keys", () => {
@@ -61,5 +66,49 @@ describe("AI safety boundaries", () => {
   it("marks high-impact requests for explicit confirmation", () => {
     expect(isHighImpactIntent("run the campaign")).toBe(true);
     expect(isHighImpactIntent("show my usage")).toBe(false);
+  });
+});
+
+describe("signup session completion and profile/workspace gates", () => {
+  it("retries a signed-in client while the trusted server session catches up", () => {
+    expect(
+      decideSessionCompletion({
+        server: { authenticated: false, userReady: false },
+        clientSignedIn: true,
+        attempts: 1,
+      }),
+    ).toBe("retry");
+    expect(
+      decideSessionCompletion({
+        server: { authenticated: true, userReady: true },
+        clientSignedIn: true,
+        attempts: 2,
+      }),
+    ).toBe("ready");
+  });
+
+  it("stops at the bounded recovery state instead of looping forever", () => {
+    expect(
+      decideSessionCompletion({
+        server: { authenticated: false, userReady: false },
+        clientSignedIn: true,
+        attempts: SESSION_COMPLETION_MAX_ATTEMPTS,
+      }),
+    ).toBe("recovery");
+    expect(
+      decideSessionCompletion({
+        server: { authenticated: false, userReady: false },
+        clientSignedIn: false,
+        attempts: 1,
+      }),
+    ).toBe("signed_out");
+  });
+
+  it("requires a name only for organization workspaces", () => {
+    expect(parseWorkspaceInput({ accountType: "personal", name: "", plan: "free" }).success).toBe(true);
+    expect(parseWorkspaceInput({ accountType: "organization", name: "", plan: "free" }).success).toBe(false);
+    expect(parseWorkspaceInput({ accountType: "organization", name: "   ", plan: "free" }).success).toBe(false);
+    expect(parseWorkspaceInput({ accountType: "organization", name: "Workflow Team", plan: "plus" }).success).toBe(true);
+    expect(parseWorkspaceInput({ accountType: "organization", name: "Workflow Team", plan: "business" }).success).toBe(false);
   });
 });

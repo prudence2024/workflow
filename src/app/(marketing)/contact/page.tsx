@@ -17,7 +17,7 @@ export default function ContactPage() {
             <p>Response within 1 business day on all plans.</p>
           </div>
         </div>
-        <form className="space-y-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-sm)]">
+        <form className="space-y-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-sm)]">
           <FieldGroup>
             <Label htmlFor="name">Full name</Label>
             <Input id="name" name="name" placeholder="Grace Johnson" required />

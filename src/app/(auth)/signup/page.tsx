@@ -45,7 +45,10 @@ export default async function SignupPage({
           Choose a plan after you verify your identity. Paid plans remain pending until billing is connected.
         </p>
         <div className="mt-7">
-          <SignUp routing="hash" forceRedirectUrl={`/onboarding?step=plan${selectedPlan ? `&plan=${selectedPlan}` : ""}`} />
+          <SignUp
+            routing="hash"
+            forceRedirectUrl={`/auth/complete?next=${encodeURIComponent(`/onboarding?step=plan${selectedPlan ? `&plan=${selectedPlan}` : ""}`)}`}
+          />
         </div>
       </div>
     );

@@ -22,7 +22,7 @@ export default function PricingPage() {
                 "flex flex-col rounded-[var(--radius-lg)] border p-7",
                 featured
                   ? "border-[var(--color-brand)] bg-[var(--color-brand)] text-white shadow-[var(--shadow-lg)]"
-                  : "border-[var(--color-border)] bg-white",
+                  : "border-[var(--color-border)] bg-[var(--color-surface)]",
               )}
             >
               {featured && (

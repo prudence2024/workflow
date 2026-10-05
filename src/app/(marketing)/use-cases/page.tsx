@@ -17,7 +17,7 @@ export default function UseCasesPage() {
       <SectionHeading eyebrow="Use cases" title="Built for anyone running a form-driven process." />
       <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CASES.map((c) => (
-          <div key={c.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
+          <div key={c.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">{c.audience}</p>
             <p className="mt-2 font-display text-[15px] font-semibold text-[var(--color-ink)]">{c.title}</p>
             <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-muted)]">{c.body}</p>

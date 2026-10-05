@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import "./globals.css";
 
 /**
@@ -52,11 +53,18 @@ function clerkConfigured(): boolean {
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const tree = (
-    <html lang="en" className={`${manrope.variable} ${jetbrainsMono.variable}`}>
-      <body className="bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased">{children}</body>
+  return (
+    <html lang="en" suppressHydrationWarning className={`${manrope.variable} ${jetbrainsMono.variable}`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => { try { const m = localStorage.getItem('workflow-theme') || 'system'; const d = m === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : m; document.documentElement.dataset.theme = d; document.documentElement.dataset.themeMode = m; } catch {} })()`,
+          }}
+        />
+      </head>
+      <body className="bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased">
+        <ThemeProvider>{clerkConfigured() ? <ClerkProvider>{children}</ClerkProvider> : children}</ThemeProvider>
+      </body>
     </html>
   );
-
-  return clerkConfigured() ? <ClerkProvider>{tree}</ClerkProvider> : tree;
 }

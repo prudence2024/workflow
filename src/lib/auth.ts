@@ -11,6 +11,7 @@ import type { Role } from "@/lib/rbac";
 
 const SESSION_COOKIE = "fops_session";
 const ORG_COOKIE = "fops_org";
+const CLERK_SESSION_COOKIE = "__session";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 // ---------------------------------------------------------------------------
@@ -78,10 +79,26 @@ export function legacyAuthAllowed(): boolean {
   return authMode() === "legacy";
 }
 
+/**
+ * A navigation hint only. This is never accepted as authentication or
+ * authorization; it lets a browser with a just-created Clerk session enter
+ * the bounded server-readiness screen instead of bouncing between /login and
+ * a protected route while auth() catches up.
+ */
+export async function hasClerkSessionHint(): Promise<boolean> {
+  if (authMode() !== "clerk") return false;
+  const store = await cookies();
+  return Boolean(store.get(CLERK_SESSION_COOKIE)?.value);
+}
+
 export type CurrentUser = {
   id: string;
   email: string;
   name: string;
+  firstName: string;
+  lastName: string;
+  /** Clerk identity has both required Workflow name fields. */
+  profileComplete: boolean;
   /** Authoritative platform-operator status, read from platform_admins. */
   isPlatformAdmin: boolean;
   emailVerified: boolean;
@@ -114,9 +131,18 @@ async function resolveClerkSubject(): Promise<string | null> {
  */
 async function ensureLocalProfile(
   clerkUserId: string,
-): Promise<{ id: string; email: string; name: string } | null> {
+): Promise<{
+  id: string;
+  email: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  profileComplete: boolean;
+} | null> {
   let email: string | undefined;
   let name: string | undefined;
+  let firstName = "";
+  let lastName = "";
 
   try {
     const { clerkClient } = await import("@clerk/nextjs/server");
@@ -124,14 +150,14 @@ async function ensureLocalProfile(
     const clerkUser = await client.users.getUser(clerkUserId);
     email =
       clerkUser.primaryEmailAddress?.emailAddress ?? clerkUser.emailAddresses?.[0]?.emailAddress;
-    name =
-      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-      clerkUser.username ||
-      undefined;
+    firstName = clerkUser.firstName?.trim() ?? "";
+    lastName = clerkUser.lastName?.trim() ?? "";
+    name = [firstName, lastName].filter(Boolean).join(" ") || clerkUser.username || undefined;
     console.info("[auth] Clerk user lookup completed", {
       clerkSubjectPresent: true,
       clerkUserLookup: "success",
       primaryEmailPresent: Boolean(email),
+      profileComplete: Boolean(firstName && lastName),
     });
   } catch (error) {
     return throwClerkOperationalError("user lookup", error);
@@ -146,7 +172,10 @@ async function ensureLocalProfile(
     throw new Error("Clerk profile cannot be provisioned");
   }
 
-  const resolvedName = name && name.trim() !== "" ? name : email.split("@")[0];
+  // Do not manufacture an identity name from an email address. A new Clerk
+  // account with missing name fields is routed through Workflow profile
+  // completion immediately after the trusted session is ready.
+  const resolvedName = name && name.trim() !== "" ? name : "Member";
 
   const rows = await db.execute<{ id: string }>(
     sql`select app.upsert_local_user(${clerkUserId}, ${email}, ${resolvedName}) as id`,
@@ -163,8 +192,16 @@ async function ensureLocalProfile(
   console.info("[auth] local profile provisioning completed", {
     clerkSubjectPresent: true,
     localUserIdPresent: true,
+    profileComplete: Boolean(firstName && lastName),
   });
-  return { id, email, name: resolvedName };
+  return {
+    id,
+    email,
+    name: resolvedName,
+    firstName,
+    lastName,
+    profileComplete: Boolean(firstName && lastName),
+  };
 }
 
 export async function isPlatformAdminSubject(clerkUserId: string): Promise<boolean> {
@@ -191,6 +228,9 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       id: profile.id,
       email: profile.email,
       name: profile.name,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      profileComplete: profile.profileComplete,
       isPlatformAdmin: await isPlatformAdminSubject(subject),
       emailVerified: true,
       clerkUserId: subject,
@@ -248,10 +288,17 @@ async function getLegacySessionUser(): Promise<CurrentUser | null> {
     return null;
   }
 
+  const legacyNameParts = row.name.trim().split(/\s+/).filter(Boolean);
   return {
     id: row.id,
     email: row.email,
     name: row.name,
+    firstName: legacyNameParts[0] ?? "",
+    lastName: legacyNameParts.slice(1).join(" "),
+    // The legacy bridge already collected its full-name field. Keep existing
+    // development accounts usable while Clerk-managed identities use the
+    // stricter first/last-name completion flow above.
+    profileComplete: true,
     isPlatformAdmin: row.isPlatformAdmin,
     emailVerified: row.emailVerified,
     clerkUserId: null,

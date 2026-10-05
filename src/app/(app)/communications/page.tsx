@@ -94,11 +94,11 @@ export default async function CommunicationsPage({
           Messages will queue and then be released without sending — this screen will never report them as
           delivered. Configure{" "}
           {unconfigured.some((u) => u.channel === "email") && (
-            <code className="rounded bg-black/[0.05] px-1">RESEND_API_KEY</code>
+            <code className="rounded bg-[var(--color-surface-raised)] px-1">RESEND_API_KEY</code>
           )}
           {unconfigured.length === 2 && " and "}
           {unconfigured.some((u) => u.channel === "sms") && (
-            <code className="rounded bg-black/[0.05] px-1">TERMII_API_KEY</code>
+            <code className="rounded bg-[var(--color-surface-raised)] px-1">TERMII_API_KEY</code>
           )}{" "}
           to enable real dispatch.
         </Alert>

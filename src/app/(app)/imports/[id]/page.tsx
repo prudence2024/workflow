@@ -113,7 +113,7 @@ export default async function ImportDetailPage({ params }: { params: Promise<{ i
                 <p className="text-[12.5px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">Detected columns</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {columns.map((c) => (
-                    <span key={c} className="rounded-full bg-white px-2.5 py-1 text-[11.5px] text-[var(--color-ink-soft)]">
+                    <span key={c} className="rounded-full bg-[var(--color-surface)] px-2.5 py-1 text-[11.5px] text-[var(--color-ink-soft)]">
                       {c}
                     </span>
                   ))}

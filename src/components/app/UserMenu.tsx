@@ -19,7 +19,7 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 w-56 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-md)]">
+          <div className="absolute right-0 z-20 mt-2 w-56 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-md)]">
             <div className="px-2.5 py-2">
               <p className="truncate text-[13px] font-semibold text-[var(--color-ink)]">{name}</p>
               <p className="truncate text-[11.5px] text-[var(--color-muted)]">{email}</p>

@@ -3,6 +3,7 @@ import { LinkButton } from "@/components/ui/Button";
 import { getCurrentUser } from "@/lib/auth";
 import { MobileNav } from "@/components/marketing/MobileNav";
 import { BrandLockup } from "@/components/brand/Logo";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 const LINKS = [
   { href: "/product", label: "Product" },
@@ -20,7 +21,7 @@ export async function MarketingNav() {
   // nav only — authenticated routes still surface DB errors.
   const user = await getCurrentUser().catch(() => null);
   return (
-    <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-white/85 backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_88%,transparent)] backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1240px] items-center justify-between px-6">
         <BrandLockup href="/" size={30} />
 
@@ -37,6 +38,7 @@ export async function MarketingNav() {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
+          <ThemeToggle compact />
           {user ? (
             <LinkButton href="/dashboard" size="sm">
               Go to dashboard

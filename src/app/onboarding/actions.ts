@@ -1,22 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { getCurrentUser, getUserOrganizations, identityOf } from "@/lib/auth";
 import { createInitialOrganizationForIdentityWithPlan, createOrganizationForIdentityWithType } from "@/lib/tenant";
 import { slugify } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 import { acceptInvitationAction } from "@/app/(app)/settings/actions";
-import { selectablePlanKeySchema } from "@/lib/plans";
+import { parseWorkspaceInput } from "@/lib/workspaceValidation";
 
 export { acceptInvitationAction };
-
-const workspaceSchema = z.object({
-  step: z.enum(["plan", "workspace"]).optional().default("workspace"),
-  plan: selectablePlanKeySchema.optional().default("free"),
-  accountType: z.enum(["personal", "organization"]),
-  name: z.string().optional().default(""),
-});
 
 /**
  * One secure workspace model for both account types (design-toolkit: prefer
@@ -28,7 +20,7 @@ export async function createWorkspaceAction(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const parsed = workspaceSchema.safeParse({
+  const parsed = parseWorkspaceInput({
     step: formData.get("step") ?? "workspace",
     plan: formData.get("plan") ?? "free",
     accountType: formData.get("accountType"),
@@ -41,9 +33,6 @@ export async function createWorkspaceAction(formData: FormData) {
   const plan = parsed.data.plan ?? "free";
   const { accountType } = parsed.data;
   const rawName = parsed.data.name.trim();
-  if (accountType === "organization" && rawName.length < 2) {
-    redirect("/onboarding?error=" + encodeURIComponent("Enter an organization name"));
-  }
 
   // Personal workspaces never require a name: derive a sensible default.
   const firstName = user.name.trim().split(/\s+/)[0] || "My";

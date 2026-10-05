@@ -46,7 +46,7 @@ export default function FeaturesPage() {
       <SectionHeading eyebrow="Features" title="Everything you need to operate at scale." />
       <div className="mt-10 grid gap-6 md:grid-cols-2">
         {GROUPS.map((g) => (
-          <div key={g.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-6">
+          <div key={g.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
             <p className="font-display text-[15px] font-semibold text-[var(--color-ink)]">{g.title}</p>
             <ul className="mt-4 space-y-2.5">
               {g.items.map((item) => (

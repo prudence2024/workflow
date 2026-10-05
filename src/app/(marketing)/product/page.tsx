@@ -54,7 +54,7 @@ export default function ProductPage() {
         </div>
       </Section>
 
-      <Section className="border-t border-[var(--color-border)] bg-white">
+      <Section className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {MODULES.map((m) => (
             <div key={m.title} className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-5">
