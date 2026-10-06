@@ -51,7 +51,9 @@ suite("durable outbox (real PostgreSQL)", () => {
         overrides.provider ?? "resend",
         overrides.status ?? "pending",
         overrides.maxAttempts ?? 5,
-        overrides.nextAttemptAt ?? new Date(Date.now() - 1000),
+        // Keep the synthetic event safely due even when the development
+        // database clock is slightly ahead of the test process clock.
+        overrides.nextAttemptAt ?? new Date(Date.now() - 60_000),
       ],
     );
     return res.rows[0]?.id as string | undefined;

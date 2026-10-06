@@ -59,7 +59,13 @@
         "CLERK_AUTHORIZED_PARTIES": "https://workflow-testing.okwuborprudence.workers.dev",
         "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
         "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
-      }
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "99bc46e2b05a47f4a2a732f46a9ab6af"
+        }
+      ]
     }
   }
   // Secrets (set with `wrangler secret put`, NEVER in this file):

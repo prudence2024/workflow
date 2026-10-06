@@ -1,7 +1,6 @@
 import { drizzle as drizzleNode } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-import { neonConfig, Pool as NeonPool } from "@neondatabase/serverless";
-import { drizzle as drizzleEdge } from "drizzle-orm/neon-serverless";
+import { Client, Pool } from "pg";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 /**
  * Lazy database pool.
@@ -16,27 +15,27 @@ import { drizzle as drizzleEdge } from "drizzle-orm/neon-serverless";
  * Two transports, one query surface:
  *   - node (default): `pg` Pool over TCP. Local dev, scripts, tests, any
  *     Node runtime. Full interactive transactions.
- *   - edge (`DATABASE_RUNTIME=edge`): Neon serverless Pool over WebSocket.
- *     Cloudflare Workers, where TCP sockets do not exist. The drizzle
- *     neon-serverless adapter supports real interactive transactions over
- *     the WebSocket transport, so withTenant()'s BEGIN -> SET LOCAL ROLE ->
- *     queries -> COMMIT flow — and therefore forced RLS — works unchanged.
+ *   - edge (`DATABASE_RUNTIME=edge`): Cloudflare Hyperdrive connection string
+ *     over a request-scoped node-postgres Client. Hyperdrive owns upstream
+ *     pooling while each Drizzle transaction keeps one Client/connection for
+ *     BEGIN -> SET LOCAL ROLE -> queries -> COMMIT.
  *     Scripts and migrations must keep running on node.
  */
-if (typeof globalThis.WebSocket !== "undefined") {
-  // Workers provide a global WebSocket; Node 22 does too. The Neon driver
-  // needs an explicit constructor reference.
-  neonConfig.webSocketConstructor = globalThis.WebSocket;
-}
-
 export function databaseRuntime(): "node" | "edge" {
   return process.env.DATABASE_RUNTIME === "edge" ? "edge" : "node";
 }
 
 const globalForDb = globalThis as typeof globalThis & {
   __workflowPool?: Pool;
-  __workflowEdgePool?: NeonPool;
 };
+
+type HyperdriveBinding = { connectionString: string };
+
+declare global {
+  interface CloudflareEnv {
+    HYPERDRIVE?: HyperdriveBinding;
+  }
+}
 
 function readDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
@@ -91,40 +90,69 @@ function liftPgCode(e: unknown): void {
   }
 }
 
-function getEdgeClient(): DrizzleClient {
-  if (!globalForDb.__workflowEdgePool) {
-    globalForDb.__workflowEdgePool = new NeonPool({
-      connectionString: readDatabaseUrl(),
-      max: Number(process.env.DATABASE_POOL_MAX ?? 5),
-    });
-  }
-  const raw = drizzleEdge(globalForDb.__workflowEdgePool);
-  const normalized = new Proxy(raw, {
-    get(t, prop, receiver) {
-      const v = Reflect.get(t, prop, receiver);
-      if (typeof v !== "function" || (prop !== "transaction" && prop !== "execute")) {
-        return typeof v === "function" ? v.bind(t) : v;
+type Cleanup = () => Promise<void>;
+
+function onceCleanup(client: Client): Cleanup {
+  let ended = false;
+  return async () => {
+    if (ended) return;
+    ended = true;
+    await client.end();
+  };
+}
+
+function wrapWithCleanup<T>(value: T, cleanup: Cleanup): T {
+  if ((typeof value !== "object" && typeof value !== "function") || value === null) return value;
+  return new Proxy(value as object, {
+    get(target, prop, receiver) {
+      if (prop === "then" && typeof (target as PromiseLike<unknown>).then === "function") {
+        return (onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+          Promise.resolve((target as PromiseLike<unknown>).then(onFulfilled, onRejected)).finally(cleanup);
       }
-      return async (...args: unknown[]) => {
+      const member = Reflect.get(target, prop, receiver);
+      if (typeof member !== "function") return member;
+      return (...args: unknown[]) => wrapWithCleanup(member.apply(target, args), cleanup);
+    },
+  }) as T;
+}
+
+function getHyperdriveConnectionString(): string {
+  const { env } = getCloudflareContext();
+  const binding = (env as CloudflareEnv).HYPERDRIVE;
+  if (!binding?.connectionString) {
+    throw new Error("HYPERDRIVE binding is not configured for the Cloudflare runtime.");
+  }
+  return binding.connectionString;
+}
+
+function getEdgeClient(): DrizzleClient {
+  const client = new Client({ connectionString: getHyperdriveConnectionString() });
+  // pg queues queries until connect resolves; retaining the rejection on the
+  // queued query prevents an unhandled promise while preserving the original
+  // database error for the caller.
+  void client.connect().catch(() => undefined);
+  const cleanup = onceCleanup(client);
+  const raw = drizzleNode(client);
+  return new Proxy(raw, {
+    get(target, prop, receiver) {
+      const member = Reflect.get(target, prop, receiver);
+      if (typeof member !== "function") return member;
+      return (...args: unknown[]) => {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return await (v as any).apply(t, args);
-        } catch (e) {
-          liftPgCode(e);
-          throw e;
+          return wrapWithCleanup(member.apply(target, args), cleanup);
+        } catch (error) {
+          void cleanup();
+          liftPgCode(error);
+          throw error;
         }
       };
     },
-  });
-  // Same method surface (select/insert/update/delete/execute/transaction);
-  // the cast is contained here so every call site keeps working unchanged.
-  return normalized as unknown as DrizzleClient;
+  }) as unknown as DrizzleClient;
 }
 
 function getClient(): DrizzleClient {
-  if (!client) {
-    client = databaseRuntime() === "edge" ? getEdgeClient() : drizzleNode(getPool());
-  }
+  if (databaseRuntime() === "edge") return getEdgeClient();
+  if (!client) client = drizzleNode(getPool());
   return client;
 }
 
@@ -144,11 +172,6 @@ export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();
     globalForDb.__workflowPool = undefined;
-  }
-  const edgePool = globalForDb.__workflowEdgePool;
-  if (edgePool) {
-    await edgePool.end();
-    globalForDb.__workflowEdgePool = undefined;
   }
   client = null;
 }
