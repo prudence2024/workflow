@@ -42,6 +42,25 @@
       "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
       "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
     }
+  },
+  // Durable non-production staging environment. Deploy with
+  // `wrangler deploy --env testing`; its secrets are scoped to the separate
+  // workflow-testing Worker and are never read from or written to production.
+  "env": {
+    "testing": {
+      "name": "workflow-testing",
+      "workers_dev": true,
+      "vars": {
+        "DATABASE_RUNTIME": "edge",
+        "BUILD_GIT_SHA": "f3f2482140a4d5ddaa728ccac2c42170af8a3f08",
+        "NEXT_PUBLIC_APP_URL": "https://workflow-testing.okwuborprudence.workers.dev",
+        "NEON_BRANCH": "development",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_c3dlZXBpbmctZ3JvdXNlLTYzNTMuY2xlcmsuYWNjb3VudHMuZGV2JA",
+        "CLERK_AUTHORIZED_PARTIES": "https://workflow-testing.okwuborprudence.workers.dev",
+        "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
+        "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
+      }
+    }
   }
   // Secrets (set with `wrangler secret put`, NEVER in this file):
   //   DATABASE_URL (pooled Neon DEVELOPMENT endpoint)
