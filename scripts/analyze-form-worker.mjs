@@ -13,6 +13,7 @@
  */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import pg from "pg";
 import { safeBrowserError } from "./form-worker-diagnostics.mjs";
@@ -123,7 +124,7 @@ async function recoverStale(client) {
 
 function runBrowserAnalysis(url) {
   return new Promise((resolve, reject) => {
-    const helper = new URL("./analyze-form.mjs", import.meta.url);
+    const helper = fileURLToPath(new URL("./analyze-form.mjs", import.meta.url));
     execFile(process.execPath, [helper, url], { timeout: 100_000 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(safeBrowserError(stderr || error)));
