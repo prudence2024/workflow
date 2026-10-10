@@ -9,7 +9,7 @@ const MODULES = [
   },
   {
     title: "Imports",
-    body: "Upload → Inspect → Map → Validate → Preview → Import. Never silently import malformed data.",
+    body: "Upload, inspect, map, validate, preview, then import. Never silently import malformed data.",
   },
   {
     title: "Campaigns",

@@ -21,6 +21,7 @@ import { DistributionBar, Stat, TD, TH, THead, TR, Table } from "@/components/ui
 import { formatDateTime } from "@/lib/utils";
 import { analysisStatusMessage } from "@/lib/formAnalysisJobs";
 import type { FormField } from "@/db/schema";
+import { CampaignStatusRefresh } from "@/components/runtime/CampaignStatusRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -46,19 +47,20 @@ export default async function CampaignDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; analyze?: string; analysis?: string }>;
+  searchParams: Promise<{ error?: string; analyze?: string; analysis?: string; page?: string }>;
 }) {
   const { user, currentOrg: org } = await getRequestWorkspaceContext();
   if (!user) redirect("/login");
   if (!org) redirect("/onboarding");
 
   const { id } = await params;
-  const { error, analyze, analysis } = await searchParams;
+  const { error, analyze, analysis, page } = await searchParams;
+  const recordPage = Math.max(1, Number.parseInt(page ?? "1", 10) || 1);
 
   // Tenant-scoped read: campaign, records, templates and custom fields all in
   // one transaction as the restricted role. A campaign from another workspace
   // simply resolves to null here (RLS), which becomes a 404.
-  const detail = await getCampaignDetail({ user, org }, id);
+  const detail = await getCampaignDetail({ user, org }, id, { page: recordPage });
   if (!detail.campaign) notFound();
 
   const campaign = detail.campaign;
@@ -78,7 +80,17 @@ export default async function CampaignDetailPage({
 
   const total = stats.total ?? 0;
   const hasFailed = (stats.failed ?? 0) > 0;
-  const canRun = (stats.queued ?? 0) + (stats.retrying ?? 0) > 0;
+  const activeRecordCount = (stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0);
+  const activeRun = campaign.status === "running" || activeRecordCount > 0;
+  const canRun = (stats.queued ?? 0) + (stats.retrying ?? 0) > 0 && !activeRun;
+  const queueButtonLabel = activeRun
+    ? campaign.status === "running" ? "Running…" : "Queued…"
+    : campaign.status === "completed" ? "Run again" : "Queue run";
+  const hasActiveWork =
+    campaign.formAnalysisStatus === "queued" ||
+    campaign.formAnalysisStatus === "processing" ||
+    (campaign.status === "running" &&
+      (stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0) > 0);
 
   return (
     <div className="space-y-5">
@@ -121,7 +133,7 @@ export default async function CampaignDetailPage({
           <form action={runCampaignAction}>
             <input type="hidden" name="campaignId" value={id} />
             <Button type="submit" size="sm" disabled={!canRun} title="Queues records for the submission worker — nothing is submitted from the browser">
-              Queue run
+              {queueButtonLabel}
             </Button>
           </form>
           <form action={archiveCampaignAction}>
@@ -142,6 +154,8 @@ export default async function CampaignDetailPage({
       )}
       {campaign.formAnalysisStatus === "processing" && <Alert tone="info">{analysisStatusMessage("processing")}</Alert>}
       {campaign.formAnalysisStatus === "ready" && fields.length > 0 && <Alert tone="success">Rendered form analyzed: {fields.length} field(s) detected.</Alert>}
+
+      <CampaignStatusRefresh campaignId={id} active={hasActiveWork} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Total records" value={total} />
@@ -171,7 +185,7 @@ export default async function CampaignDetailPage({
 
       {(!campaign.formUrl || fields.length === 0 || analyze === "1") && (
         <Card>
-          <CardHeader title="Analyze external form" description="Point to an authorized form URL to generate a reusable field definition." />
+          <CardHeader title="Test form" description="Check an authorized form URL and generate a reusable field definition." />
           <CardBody>
             <form action={analyzeFormAction} className="flex flex-wrap items-end gap-3">
               <input type="hidden" name="campaignId" value={id} />
@@ -180,7 +194,7 @@ export default async function CampaignDetailPage({
                 <Input id="formUrl" name="formUrl" type="url" defaultValue={campaign.formUrl ?? ""} placeholder="https://forms.example.org/registration" required />
                 <HelpText>The platform performs a single authorized fetch — no CAPTCHA or anti-bot bypass is ever attempted.</HelpText>
               </FieldGroup>
-              <Button type="submit">Queue form analysis</Button>
+              <Button type="submit">Test form</Button>
             </form>
           </CardBody>
         </Card>
@@ -202,7 +216,7 @@ export default async function CampaignDetailPage({
                       <p className="text-[11px] uppercase tracking-wide text-[var(--color-muted)]">{field.type}</p>
                     </div>
                     <span className="text-[var(--color-muted)]">→</span>
-                    <Select name={`map__${field.name}`} defaultValue={mapping[field.name] ?? ""}>
+                    <Select disabled={activeRun} name={`map__${field.name}`} defaultValue={mapping[field.name] ?? ""}>
                       <option value="">— Not mapped —</option>
                       {contactFieldOptions.map((opt) => (
                         <option key={opt.key} value={opt.key}>
@@ -214,7 +228,7 @@ export default async function CampaignDetailPage({
                 ))}
               </div>
               <div className="flex justify-end">
-                <Button type="submit">Save mapping</Button>
+                <Button type="submit" disabled={activeRun}>Save mapping</Button>
               </div>
             </form>
           </CardBody>
@@ -253,7 +267,7 @@ export default async function CampaignDetailPage({
       </Card>
 
       <Card>
-        <CardHeader title="Records" description={`${detail.records.length} shown`} />
+        <CardHeader title="Records" description={`${detail.recordsTotal} total · ${detail.records.length} shown`} />
         <CardBody className="p-0">
           {detail.records.length === 0 ? (
             <EmptyState title="No contacts in this campaign yet" description="Add contacts to start queuing submissions." action={<LinkButton href={`/campaigns/${id}/add-contacts`} size="sm">Add contacts</LinkButton>} />
@@ -299,6 +313,29 @@ export default async function CampaignDetailPage({
                 ))}
               </tbody>
             </Table>
+          )}
+          {detail.recordsTotal > detail.recordsPageSize && (
+            <div className="flex items-center justify-between border-t border-[var(--color-border)] px-5 py-3 text-[12px] text-[var(--color-muted)]">
+              <span>Page {detail.recordsPage}</span>
+              <div className="flex gap-2">
+                {detail.recordsPage > 1 && (
+                  <Link
+                    href={`/campaigns/${id}?page=${detail.recordsPage - 1}`}
+                    className="font-medium text-[var(--color-brand)] hover:underline"
+                  >
+                    Previous
+                  </Link>
+                )}
+                {detail.recordsPage * detail.recordsPageSize < detail.recordsTotal && (
+                  <Link
+                    href={`/campaigns/${id}?page=${detail.recordsPage + 1}`}
+                    className="font-medium text-[var(--color-brand)] hover:underline"
+                  >
+                    Next
+                  </Link>
+                )}
+              </div>
+            </div>
           )}
         </CardBody>
       </Card>

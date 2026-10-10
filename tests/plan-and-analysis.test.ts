@@ -41,7 +41,8 @@ describe("plan selection and analysis boundary", () => {
     expect(pricing).not.toMatch(/Business/i);
     expect(onboarding).not.toMatch(/business/i);
     expect(signup).not.toMatch(/isPlanKey/);
-    expect(signup).toContain("isSelectablePlanKey");
+    expect(signup).toContain("<SignUp");
+    expect(signup).not.toMatch(/name=["'](?:firstName|lastName|phone|organization|workspace|plan)["']/i);
   });
   it("keeps pending analysis truthful", () => {
     expect(analysisStatusMessage("queued")).toContain("queued");

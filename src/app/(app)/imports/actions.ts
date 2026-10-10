@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { activityEvents, contacts, customFieldDefinitions, importErrors, imports } from "@/db/schema";
+import { activityEvents, contactImports, contacts, customFieldDefinitions, files, importErrors, imports } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { inWorkspace } from "@/lib/data";
 import { parseSpreadsheet } from "@/lib/spreadsheet";
@@ -30,9 +30,25 @@ export async function uploadImportAction(formData: FormData) {
     redirect("/imports/new?error=" + encodeURIComponent("Please choose a file to upload"));
   }
 
+  const fileName = file!.name.toLowerCase();
+  if (!fileName.endsWith(".csv") && !fileName.endsWith(".xlsx")) {
+    redirect("/imports/new?error=" + encodeURIComponent("Upload a CSV or XLSX file"));
+  }
+  if (file!.size > 10 * 1024 * 1024) {
+    redirect("/imports/new?error=" + encodeURIComponent("Files must be 10 MB or smaller"));
+  }
+
   const arrayBuffer = await file!.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const { columns, rows } = parseSpreadsheet(buffer, file!.name);
+  let parsed: ReturnType<typeof parseSpreadsheet> | null = null;
+  let parseFailed = false;
+  try {
+    parsed = parseSpreadsheet(buffer, file!.name);
+  } catch {
+    parseFailed = true;
+  }
+  if (parseFailed) redirect("/imports/new?error=" + encodeURIComponent("We couldn't read that spreadsheet"));
+  const { columns, rows } = parsed!;
 
   if (columns.length === 0 || rows.length === 0) {
     redirect("/imports/new?error=" + encodeURIComponent("We couldn't detect any rows in that file"));
@@ -41,13 +57,15 @@ export async function uploadImportAction(formData: FormData) {
   // Bytes go to object storage (R2 in production); only the key is recorded in
   // PostgreSQL. In production with no R2 configured this throws rather than
   // writing a customer upload to a container filesystem.
-  const stored = await saveBuffer(
-    org.orgId,
-    file!.name,
-    buffer,
-    file!.type || "application/octet-stream",
-  );
-  const storagePath = stored.key;
+  let stored: Awaited<ReturnType<typeof saveBuffer>> | null = null;
+  let storageFailed = false;
+  try {
+    stored = await saveBuffer(org.orgId, file!.name, buffer, file!.type || "application/octet-stream");
+  } catch {
+    storageFailed = true;
+  }
+  if (storageFailed) redirect("/imports/new?error=" + encodeURIComponent("Upload storage is not available yet. Please try again later."));
+  const storagePath = stored!.key;
   const fileType = file!.name.toLowerCase().endsWith(".csv") ? "csv" : "xlsx";
 
   const record = await inWorkspace({ user, org }, async (tx) => {
@@ -64,6 +82,14 @@ export async function uploadImportAction(formData: FormData) {
         status: "uploaded",
       })
       .returning();
+    await tx.insert(files).values({
+      orgId: org.orgId,
+      kind: "import",
+      fileName: file!.name,
+      mimeType: file!.type || "application/octet-stream",
+      sizeBytes: buffer.byteLength,
+      storagePath,
+    });
     return created;
   });
 
@@ -167,8 +193,14 @@ export async function commitImportAction(formData: FormData) {
     const errorRowsRes = await tx.select({ rowNumber: importErrors.rowNumber }).from(importErrors).where(eq(importErrors.importId, importId));
     const invalidRowNumbers = new Set(errorRowsRes.map((e) => e.rowNumber));
 
-    const existing = await tx.select({ email: contacts.email, phone: contacts.phone }).from(contacts).where(eq(contacts.orgId, org.orgId));
-    const existingKeys = new Set(existing.map((c) => `${normalizeEmail(c.email ?? "")}|${normalizePhone(c.phone ?? "")}`));
+    const existing = await tx
+      .select({ id: contacts.id, email: contacts.email, phone: contacts.phone })
+      .from(contacts)
+      .where(eq(contacts.orgId, org.orgId));
+    const existingByKey = new Map(existing.map((c) => [
+      `${normalizeEmail(c.email ?? "")}|${normalizePhone(c.phone ?? "")}`,
+      c.id,
+    ]));
 
     let imported = 0;
     let skipped = 0;
@@ -181,7 +213,14 @@ export async function commitImportAction(formData: FormData) {
       const email = mapping.email ? normalizeEmail(row[mapping.email]) : "";
       const phone = mapping.phone ? normalizePhone(row[mapping.phone]) : "";
       const key = `${email}|${phone}`;
-      if (key !== "|" && existingKeys.has(key)) {
+      const existingContactId = key !== "|" ? existingByKey.get(key) : undefined;
+      if (existingContactId) {
+        await tx.insert(contactImports).values({
+          orgId: org.orgId,
+          contactId: existingContactId,
+          importId,
+          sourceRow: rowNumber,
+        }).onConflictDoNothing();
         skipped += 1;
         continue;
       }
@@ -213,7 +252,13 @@ export async function commitImportAction(formData: FormData) {
         type: "contact_imported",
         message: `Imported from ${record.fileName}`,
       });
-      if (key !== "|") existingKeys.add(key);
+      await tx.insert(contactImports).values({
+        orgId: org.orgId,
+        contactId: contact.id,
+        importId,
+        sourceRow: rowNumber,
+      }).onConflictDoNothing();
+      if (key !== "|") existingByKey.set(key, contact.id);
       imported += 1;
     }
 

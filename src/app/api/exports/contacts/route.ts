@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
   const format = req.nextUrl.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
   const activeRows = await listContactExportRows({ user, org });
-  const columns = ["firstName", "lastName", "email", "phone", "company", "address", "status", "createdAt"];
+  const customKeys = [...new Set(activeRows.flatMap((row) => Object.keys(row.customFields)))].sort();
+  const columns = ["firstName", "lastName", "email", "phone", "company", "address", "status", "createdAt", ...customKeys.map((key) => `custom.${key}`)];
   const data = activeRows.map((r) => ({
     firstName: r.firstName,
     lastName: r.lastName,
@@ -23,16 +24,18 @@ export async function GET(req: NextRequest) {
     address: r.address ?? "",
     status: r.status,
     createdAt: r.createdAt.toISOString(),
+    ...Object.fromEntries(customKeys.map((key) => [`custom.${key}`, r.customFields[key] ?? ""])),
   }));
 
   await incrementUsage(org.orgId, "reports");
 
   if (format === "csv") {
-    const csv = buildCsv(columns, data);
+    const csv = `\uFEFF${buildCsv(columns, data)}`;
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv",
         "Content-Disposition": `attachment; filename="contacts.csv"`,
+        "Cache-Control": "private, no-store",
       },
     });
   }
@@ -42,6 +45,7 @@ export async function GET(req: NextRequest) {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="contacts.xlsx"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

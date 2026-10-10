@@ -14,7 +14,7 @@ const STEPS = [
     key: "map",
     label: "Field mapping",
     title: "Map columns to form fields",
-    detail: "Full Name → Applicant Name · Email → Email",
+    detail: "Full Name to Applicant Name · Email to Email",
   },
   {
     key: "queue",

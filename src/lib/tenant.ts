@@ -125,11 +125,9 @@ export async function createOrganizationForIdentityWithType(
 ): Promise<string> {
   return withUserSession(identity, async (tx) => {
     const rows = await tx.execute<{ id: string }>(
-      sql`select app.create_organization(${name}, ${slugBase}) as id`,
+      sql`select app.create_organization_with_options(${name}, ${slugBase}, ${workspaceType}, null) as id`,
     );
-    const orgId = rows.rows[0].id;
-    await tx.execute(sql`update public.organizations set workspace_type = ${workspaceType} where id = ${orgId}::uuid`);
-    return orgId;
+    return rows.rows[0].id;
   });
 }
 
@@ -141,24 +139,27 @@ export async function createInitialOrganizationForIdentityWithPlan(
   planKey: SelectablePlanKey,
 ): Promise<{ orgId: string; created: boolean }> {
   return withUserSession(identity, async (tx) => {
-    // Serialize the first-workspace decision so a double-click cannot create
-    // two tenants for one new identity.
+    // Lock the onboarding row for the whole transaction. The workspace id is
+    // the durable idempotency key; the membership fallback preserves safety
+    // for users created before this column existed.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(coalesce(app.current_user_id()::text, ''), 0))`);
+    const onboarding = await tx.execute<{ workspace_id: string | null }>(
+      sql`select onboarding_workspace_id as workspace_id from public.users where id = app.current_user_id() for update`,
+    );
+    if (onboarding.rows[0]?.workspace_id) return { orgId: onboarding.rows[0].workspace_id, created: false };
     const existing = await tx.execute<{ id: string }>(
       sql`select org_id as id from public.organization_members where user_id = app.current_user_id() and status = 'active' order by created_at limit 1`,
     );
-    if (existing.rows[0]?.id) return { orgId: existing.rows[0].id, created: false };
+    if (existing.rows[0]?.id) {
+      await tx.execute(sql`update public.users set onboarding_workspace_id = ${existing.rows[0].id}::uuid where id = app.current_user_id() and onboarding_workspace_id is null`);
+      return { orgId: existing.rows[0].id, created: false };
+    }
 
     const rows = await tx.execute<{ id: string }>(
-      sql`select app.create_organization(${name}, ${slugBase}) as id`,
+      sql`select app.create_organization_with_options(${name}, ${slugBase}, ${workspaceType}, ${planKey}) as id`,
     );
     const orgId = rows.rows[0].id;
-    await tx.execute(sql`update public.organizations set workspace_type = ${workspaceType} where id = ${orgId}::uuid`);
-    if (planKey !== "free") {
-      // No billing provider is connected yet. Keep the active entitlement on
-      // Free and record the paid selection as a pending intent only.
-      await tx.execute(sql`update public.subscriptions set requested_plan_key = ${planKey}, status = 'pending', billing_state = 'pending_payment' where org_id = ${orgId}::uuid`);
-    }
+    await tx.execute(sql`update public.users set onboarding_workspace_id = ${orgId}::uuid where id = app.current_user_id() and onboarding_workspace_id is null`);
     return { orgId, created: true };
   });
 }

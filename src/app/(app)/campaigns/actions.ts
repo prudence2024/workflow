@@ -1,10 +1,11 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { campaignRecords, campaigns, contacts, customFieldDefinitions, messageTemplates, messages } from "@/db/schema";
+import { campaignAudienceSnapshots, campaignRecords, campaigns, contactImports, contacts, customFieldDefinitions, messageTemplates, messages } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { suggestMapping } from "@/lib/formAnalysis";
 import { analyzeFormUrl, providerForUrl } from "@/lib/formProviders";
@@ -17,6 +18,7 @@ import { sql } from "drizzle-orm";
 import { can, inWorkspace } from "@/lib/data";
 import { assertPlanCapability, assertPlanLimit, PlanCapabilityError, PlanLimitError } from "@/lib/planLimits";
 import { enqueueEvent } from "@/lib/outbox";
+import { validatePrequeueContact } from "@/lib/prequeueValidation";
 
 async function requireOrgContext() {
   const user = await getCurrentUser();
@@ -43,7 +45,8 @@ export async function createCampaignAction(formData: FormData) {
     redirect("/campaigns/new?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
 
-  let campaign;
+  let campaign: typeof campaigns.$inferSelect | null = null;
+  let planLimitMessage: string | null = null;
   try {
     campaign = await inWorkspace({ user, org }, async (tx) => {
       await assertPlanLimit(tx, org.orgId, "activeCampaigns");
@@ -61,9 +64,11 @@ export async function createCampaignAction(formData: FormData) {
     return created;
   });
   } catch (error) {
-    if (error instanceof PlanLimitError) redirect(`/campaigns/new?error=${encodeURIComponent(error.message)}`);
-    throw error;
+    if (error instanceof PlanLimitError) planLimitMessage = error.message;
+    else throw error;
   }
+  if (planLimitMessage) redirect(`/campaigns/new?error=${encodeURIComponent(planLimitMessage)}`);
+  if (!campaign) throw new Error("Campaign could not be created");
 
   await logActivity({ orgId: org.orgId, campaignId: campaign.id, type: "campaign_created", message: `Campaign "${campaign.name}" created` });
 
@@ -85,30 +90,38 @@ export async function analyzeFormAction(formData: FormData) {
   // Browser-required providers are durable work on the edge. The request only
   // validates, authorizes and enqueues; a separate Node worker owns Chromium.
   if (providerForUrl(formUrl) === "google") {
+    let queued: { status: string } | null;
+    let queueError: string | null = null;
     try {
-      const queued = await queueFormAnalysis({ user, org }, campaignId, formUrl);
-      if (!queued) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Campaign not found"));
-      revalidatePath(`/campaigns/${campaignId}`);
-      redirect(`/campaigns/${campaignId}?analysis=queued`);
+      queued = await queueFormAnalysis({ user, org }, campaignId, formUrl);
     } catch (err) {
-      redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(err instanceof Error ? err.message : "Could not queue form analysis"));
+      queued = null;
+      queueError = err instanceof Error ? err.message : "Could not queue form analysis";
     }
+    if (queueError) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(queueError));
+    if (!queued) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Campaign not found"));
+    revalidatePath(`/campaigns/${campaignId}`);
+    redirect(`/campaigns/${campaignId}?analysis=queued`);
   }
 
   // Static standard forms can still be analyzed inline because they do not need
   // a browser. Ambiguous results remain visible and are never marked ready.
-  let analyzed: Awaited<ReturnType<typeof analyzeFormUrl>>;
+  let analyzed: Awaited<ReturnType<typeof analyzeFormUrl>> | null = null;
+  let analysisError: string | null = null;
   try {
     analyzed = await analyzeFormUrl(formUrl);
   } catch (err) {
-    redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(err instanceof Error ? err.message : "Could not analyze that form"));
+    analysisError = err instanceof Error ? err.message : "Could not analyze that form";
   }
+  if (analysisError) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(analysisError));
+  if (!analyzed) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Could not analyze that form"));
 
   if (analyzed.fields.length === 0) {
     const detail = analyzed.diagnostics[0] ?? "No form fields were detected on that page";
     redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent(detail));
   }
 
+  let saveError = false;
   try {
     await inWorkspace({ user, org }, async (tx) => {
       const definitions = await tx.select().from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
@@ -128,8 +141,9 @@ export async function analyzeFormAction(formData: FormData) {
     await logActivity({ orgId: org.orgId, campaignId, type: "form_analyzed", message: `Analyzed form at ${analyzed.finalUrl} via ${analyzed.provider}: ${analyzed.fields.length} fields detected${detail}` });
     await incrementUsage(org.orgId, "form_analyses");
   } catch {
-    redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Could not save the form analysis"));
+    saveError = true;
   }
+  if (saveError) redirect(`/campaigns/${campaignId}?error=` + encodeURIComponent("Could not save the form analysis"));
 
   revalidatePath(`/campaigns/${campaignId}`);
   redirect(`/campaigns/${campaignId}`);
@@ -139,9 +153,16 @@ export async function saveFieldMappingAction(formData: FormData) {
   const { user, org } = await requireOrgContext();
   const campaignId = String(formData.get("campaignId"));
 
-  const saved = await inWorkspace({ user, org }, async (tx) => {
+  const saveResult = await inWorkspace({ user, org }, async (tx): Promise<"saved" | "missing" | "active"> => {
     const [campaign] = await tx.select().from(campaigns).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId))).limit(1);
-    if (!campaign) return false;
+    if (!campaign) return "missing";
+
+    const activeRecords = await tx.execute<{ n: number }>(sql`
+      select count(*)::int as n from public.campaign_records
+       where campaign_id = ${campaignId}::uuid
+         and status in ('queued', 'retrying', 'processing')
+    `);
+    if (campaign.status === "running" || (activeRecords.rows[0]?.n ?? 0) > 0) return "active";
 
     const fields = (campaign.formDefinition as { name: string }[]) ?? [];
     const mapping: Record<string, string> = {};
@@ -154,9 +175,10 @@ export async function saveFieldMappingAction(formData: FormData) {
       .update(campaigns)
       .set({ fieldMapping: mapping, status: campaign.status === "draft" ? "ready" : campaign.status, updatedAt: new Date() })
       .where(eq(campaigns.id, campaignId));
-    return true;
+    return "saved";
   });
-  if (!saved) redirect("/campaigns");
+  if (saveResult === "missing") redirect("/campaigns");
+  if (saveResult === "active") redirect(`/campaigns/${campaignId}?error=${encodeURIComponent("Mapping is locked while this run is active.")}`);
 
   await logActivity({ orgId: org.orgId, campaignId, type: "mapping_saved", message: "Field mapping saved" });
   revalidatePath(`/campaigns/${campaignId}`);
@@ -168,34 +190,93 @@ export async function addContactsToCampaignAction(formData: FormData) {
   const campaignId = String(formData.get("campaignId"));
   const mode = String(formData.get("mode") ?? "selected");
 
-  let added;
+  let added = 0;
+  let planLimitMessage: string | null = null;
   try {
     added = await inWorkspace({ user, org }, async (tx) => {
-    let contactIds: string[] = [];
-    if (mode === "all") {
-      const rows = await tx.select({ id: contacts.id }).from(contacts).where(and(eq(contacts.orgId, org.orgId), isNull(contacts.archivedAt)));
-      contactIds = rows.map((r) => r.id);
-    } else {
-      contactIds = formData.getAll("contactIds").map(String);
-    }
-    if (contactIds.length === 0) return 0;
+      const [campaign] = await tx
+      .select({ id: campaigns.id })
+      .from(campaigns)
+      .where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)))
+      .limit(1);
+      if (!campaign) return 0;
 
-    const existing = await tx
-      .select({ contactId: campaignRecords.contactId })
-      .from(campaignRecords)
-      .where(and(eq(campaignRecords.campaignId, campaignId), eq(campaignRecords.orgId, org.orgId)));
+      // Bulk modes use INSERT…SELECT so a large workspace never becomes a
+      // request-sized JavaScript array. The candidate count is bounded to one
+      // integer for plan enforcement, while Postgres performs the set insert.
+      if (mode === "all" || mode === "import") {
+        const importId = String(formData.get("importId") ?? "");
+        if (mode === "import" && !importId) redirect(`/campaigns/${campaignId}?error=${encodeURIComponent("Choose an imported batch")}`);
+
+        const source = mode === "import"
+          ? sql`join public.contact_imports ci on ci.contact_id = c.id and ci.org_id = ${org.orgId}::uuid and ci.import_id = ${importId}::uuid`
+          : sql``;
+        const sourceGuard = mode === "import"
+          ? sql`and exists (select 1 from public.imports i where i.id = ${importId}::uuid and i.org_id = ${org.orgId}::uuid and i.status = 'imported')`
+          : sql``;
+        const candidateCount = await tx.execute<{ n: number }>(sql`
+          select count(*)::int as n
+            from public.contacts c
+            ${source}
+           where c.org_id = ${org.orgId}::uuid
+             and c.archived_at is null
+             ${sourceGuard}
+             and not exists (
+               select 1 from public.campaign_records cr
+                where cr.campaign_id = ${campaignId}::uuid and cr.contact_id = c.id
+             )
+        `);
+        const candidateTotal = Number(candidateCount.rows[0]?.n ?? 0);
+        if (candidateTotal === 0) return 0;
+        await assertPlanLimit(tx, org.orgId, "contacts", candidateTotal);
+        const inserted = await tx.execute<{ id: string }>(sql`
+          insert into public.campaign_records (org_id, campaign_id, contact_id, status)
+          select ${org.orgId}::uuid, ${campaignId}::uuid, c.id, 'queued'
+            from public.contacts c
+            ${source}
+           where c.org_id = ${org.orgId}::uuid
+             and c.archived_at is null
+             ${sourceGuard}
+             and not exists (
+               select 1 from public.campaign_records cr
+                where cr.campaign_id = ${campaignId}::uuid and cr.contact_id = c.id
+             )
+          returning id
+        `);
+        return inserted.rows.length;
+      }
+
+      // The checkbox UI is paginated; cap a forged/massive POST as a second
+      // guardrail before it reaches SQL or the plan-limit calculation.
+      const contactIds = formData.getAll("contactIds").map(String).filter(Boolean).slice(0, 1000);
+      if (contactIds.length === 0) return 0;
+
+      const ownedContacts = await tx
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(eq(contacts.orgId, org.orgId), inArray(contacts.id, contactIds), isNull(contacts.archivedAt)))
+        .limit(1000);
+      const ownedContactIds = ownedContacts.map((contact) => contact.id);
+      if (ownedContactIds.length === 0) return 0;
+
+      const existing = await tx
+        .select({ contactId: campaignRecords.contactId })
+        .from(campaignRecords)
+        .where(and(eq(campaignRecords.campaignId, campaignId), eq(campaignRecords.orgId, org.orgId), inArray(campaignRecords.contactId, ownedContactIds)))
+        .limit(1000);
     const existingSet = new Set(existing.map((e) => e.contactId));
-    const toInsert = contactIds.filter((id) => !existingSet.has(id));
+      const toInsert = ownedContactIds.filter((id) => !existingSet.has(id));
 
-    if (toInsert.length === 0) return 0;
-    await assertPlanLimit(tx, org.orgId, "contacts", toInsert.length);
-    await tx.insert(campaignRecords).values(toInsert.map((contactId) => ({ orgId: org.orgId, campaignId, contactId, status: "queued" })));
-    return toInsert.length;
-  });
+      if (toInsert.length === 0) return 0;
+      await assertPlanLimit(tx, org.orgId, "contacts", toInsert.length);
+      await tx.insert(campaignRecords).values(toInsert.map((contactId) => ({ orgId: org.orgId, campaignId, contactId, status: "queued" })));
+      return toInsert.length;
+    });
   } catch (error) {
-    if (error instanceof PlanLimitError) redirect(`/campaigns/${campaignId}?error=${encodeURIComponent(error.message)}`);
-    throw error;
+    if (error instanceof PlanLimitError) planLimitMessage = error.message;
+    else throw error;
   }
+  if (planLimitMessage) redirect(`/campaigns/${campaignId}?error=${encodeURIComponent(planLimitMessage)}`);
   if (added > 0) {
     await logActivity({ orgId: org.orgId, campaignId, type: "contacts_added", message: `${added} contacts added to campaign` });
   }
@@ -213,21 +294,81 @@ export async function runCampaignAction(formData: FormData) {
   let queued;
   try {
     queued = await inWorkspace({ user, org }, async (tx) => {
-      const campaignRows = await tx.execute<{ form_analysis_status: string; form_definition: unknown }>(sql`
-        select form_analysis_status, form_definition from public.campaigns
+      const campaignRows = await tx.execute<{ status: string; form_analysis_status: string; form_definition: unknown; field_mapping: Record<string, string> | null }>(sql`
+        select status, form_analysis_status, form_definition, field_mapping from public.campaigns
         where id = ${campaignId}::uuid and org_id = ${org.orgId}::uuid limit 1
       `);
       const campaign = campaignRows.rows[0];
       if (!campaign || campaign.form_analysis_status !== "ready") throw new Error("Analyze the authorized form successfully before running this campaign.");
+      const activeRecords = await tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from public.campaign_records
+         where campaign_id = ${campaignId}::uuid
+           and status in ('queued', 'retrying', 'processing')
+      `);
+      if (campaign.status === "running" || (activeRecords.rows[0]?.n ?? 0) > 0) {
+        throw new Error("A campaign run is already active.");
+      }
       const fields = Array.isArray(campaign.form_definition) ? campaign.form_definition as Array<{ pageIndex?: number; branchGroup?: string }> : [];
       const dynamic = fields.some((field) => (field.pageIndex ?? 0) > 0 || Boolean(field.branchGroup));
       if (dynamic) await assertPlanCapability(tx, org.orgId, "multi_page_forms");
+      const definition = Array.isArray(campaign.form_definition)
+        ? campaign.form_definition as Array<{ name: string; label?: string; required?: boolean }>
+        : [];
+      const mapping = campaign.field_mapping ?? {};
+      const audience = await tx.execute<{
+        id: string;
+        first_name: string;
+        last_name: string;
+        email: string | null;
+        phone: string | null;
+        company: string | null;
+        address: string | null;
+        custom_fields: Record<string, string> | null;
+      }>(sql`
+        select r.id, c.first_name, c.last_name, c.email, c.phone, c.company, c.address, c.custom_fields
+          from public.campaign_records r
+          join public.contacts c on c.id = r.contact_id
+         where r.campaign_id = ${campaignId}::uuid
+           and r.status in ('queued', 'retrying')
+      `);
+      for (const row of audience.rows) {
+        const preflight = validatePrequeueContact({
+          firstName: row.first_name,
+          lastName: row.last_name,
+          email: row.email,
+          phone: row.phone,
+          company: row.company,
+          address: row.address,
+          customFields: row.custom_fields,
+        }, definition, mapping);
+        if (!preflight.valid) {
+          await tx.execute(sql`
+            update public.campaign_records
+               set status = 'skipped', failure_category = 'validation_failed',
+                   result_message = ${`Missing required form data: ${preflight.missing.join(", ")}`}, updated_at = now()
+             where id = ${row.id}::uuid
+          `);
+        }
+      }
       const rows = await tx.execute<{ n: number }>(sql`
         select count(*)::int as n from public.campaign_records
         where campaign_id = ${campaignId}::uuid and status in ('queued', 'retrying')
       `);
       await assertPlanLimit(tx, org.orgId, "submissionsPerMonth", rows.rows[0]?.n ?? 0);
-      await tx.update(campaigns).set({ status: "running", updatedAt: new Date() }).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
+      const snapshotRows = await tx.execute<{ contact_id: string }>(sql`
+        select contact_id from public.campaign_records
+         where campaign_id = ${campaignId}::uuid and status in ('queued', 'retrying')
+      `);
+      const snapshotId = randomUUID();
+      if (snapshotRows.rows.length > 0) {
+        await tx.insert(campaignAudienceSnapshots).values(snapshotRows.rows.map((row) => ({
+          snapshotId,
+          orgId: org.orgId,
+          campaignId,
+          contactId: row.contact_id,
+        }))).onConflictDoNothing();
+      }
+      await tx.update(campaigns).set({ audienceSnapshotId: snapshotRows.rows.length > 0 ? snapshotId : null, status: "running", updatedAt: new Date() }).where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId)));
       return rows.rows[0]?.n ?? 0;
     });
   } catch (error) {

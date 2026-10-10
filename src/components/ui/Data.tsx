@@ -13,7 +13,7 @@ export function Stat({
   trend?: { direction: "up" | "down" | "flat"; label: string };
 }) {
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-xs)]">
+    <div className="min-w-0 max-w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-xs)]">
       <p className="text-[12.5px] font-medium uppercase tracking-wide text-[var(--color-muted)]">{label}</p>
       <p className="mt-2 font-mono-data font-display text-[28px] font-semibold leading-none text-[var(--color-ink)]">
         {value}

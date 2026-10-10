@@ -23,10 +23,19 @@ const CONTACT_FIELDS: { key: string; label: string; required?: boolean }[] = [
 ];
 
 function guessColumn(columns: string[], key: string): string {
-  const normalized = columns.find((c) => c.toLowerCase().replace(/[^a-z]/g, "") === key.toLowerCase());
-  if (normalized) return normalized;
-  const partial = columns.find((c) => c.toLowerCase().includes(key.toLowerCase()));
-  return partial ?? "";
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const aliases: Record<string, string[]> = {
+    firstName: ["firstname", "givenname", "forename", "first", "fullname", "name"],
+    lastName: ["lastname", "surname", "familyname", "last"],
+    email: ["email", "emailaddress", "mail"],
+    phone: ["phone", "phonenumber", "mobile", "mobilenumber", "telephone", "tel"],
+    company: ["company", "organization", "organisation", "business"],
+    address: ["address", "street", "streetaddress"],
+  };
+  const normalizedAliases = aliases[key] ?? [normalize(key)];
+  return columns.find((column) => normalizedAliases.includes(normalize(column)))
+    ?? columns.find((column) => normalizedAliases.some((alias) => normalize(column).includes(alias)))
+    ?? "";
 }
 
 export default async function ImportDetailPage({ params }: { params: Promise<{ id: string }> }) {

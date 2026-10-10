@@ -47,6 +47,18 @@ export const users = pgTable("users", {
   /** DEPRECATED denormalised flag: authorization reads platform_admins only. */
   isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   emailVerified: boolean("email_verified").notNull().default(false),
+  onboardingStage: text("onboarding_stage").notNull().default("workspace"),
+  onboardingPlan: text("onboarding_plan"),
+  onboardingWorkspaceType: text("onboarding_workspace_type"),
+  onboardingWorkspaceName: text("onboarding_workspace_name"),
+  onboardingWorkspaceId: uuid("onboarding_workspace_id"),
+  onboardingPhone: text("onboarding_phone"),
+  onboardingPhonePinId: text("onboarding_phone_pin_id"),
+  onboardingPhoneSentAt: timestamp("onboarding_phone_sent_at", { withTimezone: true }),
+  onboardingPhoneVerifyAttempts: integer("onboarding_phone_verify_attempts").notNull().default(0),
+  onboardingPhoneSendCount: integer("onboarding_phone_send_count").notNull().default(0),
+  onboardingPhoneSendWindowStartedAt: timestamp("onboarding_phone_send_window_started_at", { withTimezone: true }),
+  onboardingPhoneVerifiedAt: timestamp("onboarding_phone_verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -289,6 +301,8 @@ export const campaigns = pgTable("campaigns", {
   formUrl: text("form_url"),
   formDefinition: jsonb("form_definition").$type<FormField[]>().default([]),
   fieldMapping: jsonb("field_mapping").$type<Record<string, string>>().default({}),
+  /** Snapshot run id used to freeze the audience a worker may execute. */
+  audienceSnapshotId: uuid("audience_snapshot_id"),
   formAnalysisStatus: text("form_analysis_status").notNull().default("idle"),
   formAnalysisError: text("form_analysis_error"),
   formAnalysisUpdatedAt: timestamp("form_analysis_updated_at", { withTimezone: true }),
@@ -416,6 +430,24 @@ export const campaignRecords = pgTable("campaign_records", {
   ),
 ]);
 
+/** A durable audience snapshot created when a campaign run starts. */
+export const campaignAudienceSnapshots = pgTable("campaign_audience_snapshots", {
+  snapshotId: uuid("snapshot_id").notNull(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  campaignId: uuid("campaign_id")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id")
+    .notNull()
+    .references(() => contacts.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.snapshotId, table.contactId] }),
+  index("campaign_snapshot_org_campaign_idx").on(table.orgId, table.campaignId, table.snapshotId),
+]);
+
 // ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------
@@ -439,6 +471,29 @@ export const imports = pgTable("imports", {
   createdByUserId: uuid("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("imports_org_created_idx").on(table.orgId, table.createdAt)]);
+
+/**
+ * Durable provenance for every contact included by an import. A join table is
+ * intentional: an existing contact can be included by many imports and must
+ * remain targetable by each source batch without duplicating the contact row.
+ */
+export const contactImports = pgTable("contact_imports", {
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id")
+    .notNull()
+    .references(() => contacts.id, { onDelete: "cascade" }),
+  importId: uuid("import_id")
+    .notNull()
+    .references(() => imports.id, { onDelete: "cascade" }),
+  sourceRow: integer("source_row").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.contactId, table.importId] }),
+  index("contact_imports_org_import_idx").on(table.orgId, table.importId),
+  index("contact_imports_org_contact_idx").on(table.orgId, table.contactId),
+]);
 
 export const importErrors = pgTable("import_errors", {
   id: id(),
@@ -535,6 +590,43 @@ export const subscriptions = pgTable("subscriptions", {
   check("subscriptions_plan_key_check", sql`${table.planKey} in ('free','pro','plus','business')`),
   check("subscriptions_requested_plan_key_check", sql`${table.requestedPlanKey} is null or ${table.requestedPlanKey} in ('free','pro','plus','business')`),
   check("subscriptions_billing_state_check", sql`${table.billingState} in ('active','pending_payment','past_due','cancelled')`),
+]);
+
+/**
+ * Durable provider payment records. A row is not a receipt until its status
+ * is `verified`; browser callbacks and client state never write that status.
+ * Provider references and idempotency keys are unique so webhook replay and
+ * provider retries converge on one financial event.
+ */
+export const payments = pgTable("payments", {
+  id: id(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  provider: text("provider").notNull().default("paystack"),
+  providerReference: text("provider_reference").notNull(),
+  providerTransactionId: text("provider_transaction_id"),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  planKey: text("plan_key").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull().default("NGN"),
+  status: text("status").notNull().default("pending"),
+  paymentMethodSummary: text("payment_method_summary"),
+  receiptNumber: text("receipt_number").unique(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  billingPeriodStart: timestamp("billing_period_start", { withTimezone: true }),
+  billingPeriodEnd: timestamp("billing_period_end", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("payments_provider_reference_unique").on(table.provider, table.providerReference),
+  index("payments_org_created_idx").on(table.orgId, table.createdAt),
+  index("payments_org_status_idx").on(table.orgId, table.status),
+  check("payments_plan_key_check", sql`${table.planKey} in ('free','pro','plus','business')`),
+  check("payments_status_check", sql`${table.status} in ('pending','verified','failed','cancelled','refunded')`),
+  check("payments_amount_check", sql`${table.amount} >= 0`),
 ]);
 
 // ---------------------------------------------------------------------------

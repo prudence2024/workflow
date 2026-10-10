@@ -34,11 +34,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const safeName = campaign.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
   if (format === "csv") {
-    const csv = buildCsv(columns, data);
+    const csv = `\uFEFF${buildCsv(columns, data)}`;
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv",
         "Content-Disposition": `attachment; filename="${safeName}-report.csv"`,
+        "Cache-Control": "private, no-store",
       },
     });
   }
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${safeName}-report.xlsx"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

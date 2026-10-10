@@ -6,15 +6,6 @@ export type SafeErrorDiagnostic = {
   safeMessage: string;
 };
 
-function redact(value: string): string {
-  return value
-    .replace(/(?:bearer|token|authorization|cookie|secret|password|database_url)\s*[:=]?\s*\S+/gi, "[redacted]")
-    .replace(/(?:sk|pk)_(?:test|live)_[A-Za-z0-9_-]+/g, "[redacted]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]")
-    .replace(/https?:\/\/\S+/gi, "[redacted-url]")
-    .slice(0, 240);
-}
-
 export function safeErrorDiagnostic(error: unknown): SafeErrorDiagnostic {
   const value = error as {
     name?: unknown;
@@ -22,18 +13,17 @@ export function safeErrorDiagnostic(error: unknown): SafeErrorDiagnostic {
     message?: unknown;
     cause?: { code?: unknown; message?: unknown };
   };
-  const message = typeof value?.message === "string" ? value.message : "unknown operational error";
-  const code =
+  const rawCode =
     typeof value?.code === "string"
       ? value.code
       : typeof value?.cause?.code === "string"
         ? value.cause.code
         : null;
-  return {
-    errorName: typeof value?.name === "string" ? value.name : "Error",
-    code,
-    safeMessage: redact(message),
-  };
+  const code = rawCode && /^[A-Z0-9_]{1,32}$/.test(rawCode) ? rawCode : null;
+  const errorName = typeof value?.name === "string" && /^[A-Za-z][A-Za-z0-9]{0,79}$/.test(value.name) ? value.name : "Error";
+  // Provider/SQL messages can contain arbitrary personal values or credentials.
+  // Record the error class and code, never the raw message or cause payload.
+  return { errorName, code, safeMessage: code ? `Operational failure (${code})` : "Operational failure" };
 }
 
 export async function timedRuntimeStage<T>(

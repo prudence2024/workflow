@@ -3,6 +3,7 @@ import { JetBrains_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { StaleActionRecovery } from "@/components/runtime/StaleActionRecovery";
 import "./globals.css";
 
 /**
@@ -63,7 +64,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased">
-        <ThemeProvider>{clerkConfigured() ? <ClerkProvider>{children}</ClerkProvider> : children}</ThemeProvider>
+        <ThemeProvider><StaleActionRecovery />{clerkConfigured() ? <ClerkProvider>{children}</ClerkProvider> : children}</ThemeProvider>
       </body>
     </html>
   );

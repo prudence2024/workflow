@@ -1,19 +1,17 @@
 import Link from "next/link";
 import { SignUp } from "@clerk/nextjs";
 import { signupAction } from "@/app/(auth)/actions";
-import { authMode } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label } from "@/components/ui/Field";
+import { authMode } from "@/lib/auth";
 import { Alert } from "@/components/ui/Surfaces";
-import { isSelectablePlanKey } from "@/lib/plans";
 
 export default async function SignupPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string; plan?: string }>;
 }) {
-  const { error, plan: rawPlan } = await searchParams;
-  const selectedPlan = isSelectablePlanKey(rawPlan) ? rawPlan : null;
+  const { error } = await searchParams;
   const mode = authMode();
 
   if (mode === "unconfigured") {
@@ -39,15 +37,14 @@ export default async function SignupPage({
     return (
       <div>
         <h1 className="font-display text-[26px] font-semibold text-[var(--color-ink)]">
-          Create your workspace
+          Create your account
         </h1>
-        <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">
-          Choose a plan after you verify your identity. Paid plans remain pending until billing is connected.
-        </p>
+        <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">Sign up to start setting up your Workflow workspace.</p>
         <div className="mt-7">
+          {/* Clerk owns identity creation, verification, and social OAuth. Profile details stay in onboarding. */}
           <SignUp
             routing="hash"
-            forceRedirectUrl={`/auth/complete?next=${encodeURIComponent(`/onboarding?step=plan${selectedPlan ? `&plan=${selectedPlan}` : ""}`)}`}
+            forceRedirectUrl={`/auth/complete?next=${encodeURIComponent("/onboarding?step=workspace")}`}
           />
         </div>
       </div>
@@ -56,7 +53,7 @@ export default async function SignupPage({
 
   return (
     <div>
-      <h1 className="font-display text-[26px] font-semibold text-[var(--color-ink)]">Create your workspace</h1>
+      <h1 className="font-display text-[26px] font-semibold text-[var(--color-ink)]">Create your account</h1>
       <p className="mt-1.5 text-[13.5px] text-[var(--color-muted)]">Free forever for small operations. No card required.</p>
 
       {error && (
@@ -65,15 +62,7 @@ export default async function SignupPage({
         </div>
       )}
 
-      <form action={signupAction} className="mt-7 space-y-4">
-        <FieldGroup>
-          <Label htmlFor="name">Full name</Label>
-          <Input id="name" name="name" placeholder="Grace Johnson" required autoComplete="name" />
-        </FieldGroup>
-        <FieldGroup>
-          <Label htmlFor="organization">Organization name</Label>
-          <Input id="organization" name="organization" placeholder="Grace Community Church" required />
-        </FieldGroup>
+      <form action={signupAction} className="mt-7 space-y-4" data-testid="legacy-auth-only-signup">
         <FieldGroup>
           <Label htmlFor="email">Work email</Label>
           <Input id="email" name="email" type="email" placeholder="you@organization.org" required autoComplete="email" />
@@ -81,13 +70,10 @@ export default async function SignupPage({
         <FieldGroup>
           <Label htmlFor="password">Password</Label>
           <Input id="password" name="password" type="password" placeholder="At least 8 characters" required minLength={8} autoComplete="new-password" />
-          <HelpText>
-            Development bridge only — password sign-up is disabled in production. Configure Clerk to
-            enable real account creation.
-          </HelpText>
+          <HelpText>Development bridge only — configure Clerk to enable real account creation.</HelpText>
         </FieldGroup>
         <Button type="submit" className="w-full" size="lg">
-          Create workspace
+          Create account
         </Button>
       </form>
 

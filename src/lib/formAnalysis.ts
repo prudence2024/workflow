@@ -80,19 +80,32 @@ export function analyzeFormHtml(html: string): FormField[] {
 export function suggestMapping(columns: string[], fields: FormField[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const semanticAliases: Record<string, string[]> = {
+    firstname: ["firstname", "givenname", "forename", "first"],
+    lastname: ["lastname", "surname", "familyname", "last"],
+    email: ["email", "emailaddress", "mail"],
+    phone: ["phone", "phonenumber", "mobile", "mobilenumber", "telephone", "tel"],
+  };
+  const semanticKey = (value: string) => {
+    const normalized = normalize(value);
+    return Object.entries(semanticAliases).find(([, aliases]) => aliases.some((alias) => normalized === alias || normalized.includes(alias)))?.[0];
+  };
 
   for (const field of fields) {
     const targetNorm = normalize(field.name) + normalize(field.label);
+    const targetSemantic = semanticKey(`${field.name} ${field.label}`);
     let bestMatch: string | undefined;
     let bestScore = 0;
 
     for (const column of columns) {
       const colNorm = normalize(column);
+      const columnSemantic = semanticKey(column);
       let score = 0;
       if (targetNorm.includes(colNorm) || colNorm.includes(normalize(field.label))) score += 2;
       if (colNorm.includes(normalize(field.name))) score += 2;
+      if (targetSemantic && targetSemantic === columnSemantic) score += 5;
       if (field.type === "email" && colNorm.includes("email")) score += 3;
-      if (field.type === "phone" && (colNorm.includes("phone") || colNorm.includes("mobile"))) score += 3;
+      if (field.type === "phone" && (colNorm.includes("phone") || colNorm.includes("mobile") || colNorm.includes("tel"))) score += 3;
       if (colNorm.includes("name") && normalize(field.label).includes("name")) score += 1;
       if (score > bestScore) {
         bestScore = score;

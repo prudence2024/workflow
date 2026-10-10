@@ -1,4 +1,6 @@
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getUserOrganizations } from "@/lib/auth";
+import { pendingInvitationsForEmail } from "@/lib/data";
+import { resolvePostAuthRoute } from "@/lib/postAuthRouting";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +12,28 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await getCurrentUser();
+    if (!user) {
+      return Response.json(
+        { authenticated: false, userReady: false, destination: "/login" },
+        {
+          headers: {
+            "Cache-Control": "no-store, max-age=0",
+          },
+        },
+      );
+    }
+
+    const organizations = await getUserOrganizations(user);
+    const pendingInvitations = organizations.length === 0
+      ? await pendingInvitationsForEmail(user.email)
+      : [];
+    const destination = resolvePostAuthRoute({
+      authenticated: true,
+      hasPendingInvitation: pendingInvitations.length > 0,
+      hasWorkspace: organizations.length > 0,
+    });
     return Response.json(
-      { authenticated: Boolean(user), userReady: Boolean(user) },
+      { authenticated: true, userReady: true, destination },
       {
         headers: {
           "Cache-Control": "no-store, max-age=0",

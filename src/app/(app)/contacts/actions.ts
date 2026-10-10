@@ -168,14 +168,19 @@ export async function addTagAction(formData: FormData) {
       .where(and(eq(tags.orgId, org.orgId), eq(tags.name, rawName)))
       .limit(1);
 
-    const tag =
-      existing[0] ??
-      (
-        await tx
-          .insert(tags)
-          .values({ orgId: org.orgId, name: rawName, color: "brand" })
-          .returning()
-      )[0];
+    let tag = existing[0];
+    if (!tag) {
+      await tx
+        .insert(tags)
+        .values({ orgId: org.orgId, name: rawName, color: "brand" })
+        .onConflictDoNothing({ target: [tags.orgId, tags.name] });
+      tag = (await tx
+        .select()
+        .from(tags)
+        .where(and(eq(tags.orgId, org.orgId), eq(tags.name, rawName)))
+        .limit(1))[0];
+    }
+    if (!tag) throw new Error("Tag could not be created safely");
 
     await tx.insert(contactTags).values({ contactId, tagId: tag.id }).onConflictDoNothing();
   });

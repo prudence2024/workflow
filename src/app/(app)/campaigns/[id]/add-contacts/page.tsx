@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
-import { getCampaignAudienceCandidates } from "@/lib/data";
+import { getCampaignAudienceCandidates, getCampaignImportBatches } from "@/lib/data";
 import { addContactsToCampaignAction } from "@/app/(app)/campaigns/actions";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui/Surfaces";
 import { Button, LinkButton } from "@/components/ui/Button";
@@ -9,14 +10,25 @@ import { Avatar } from "@/components/ui/Data";
 // Authenticated page: reads session cookies and tenant context at request time.
 export const dynamic = "force-dynamic";
 
-export default async function AddContactsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AddContactsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string; search?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
 
   const { id } = await params;
-  const { campaign, availableContacts } = await getCampaignAudienceCandidates({ user, org }, id);
+  const { page: pageParam, search = "" } = await searchParams;
+  const page = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1);
+  const [{ campaign, availableContacts, total, page: resolvedPage, pageSize, search: resolvedSearch }, importBatches] = await Promise.all([
+    getCampaignAudienceCandidates({ user, org }, id, { page, search }),
+    getCampaignImportBatches({ user, org }),
+  ]);
   if (!campaign) notFound();
 
   return (
@@ -24,7 +36,7 @@ export default async function AddContactsPage({ params }: { params: Promise<{ id
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-[20px] font-semibold text-[var(--color-ink)]">Add contacts to {campaign.name}</h1>
-          <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">{availableContacts.length} eligible contacts not already in this campaign</p>
+          <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">{total} eligible contacts not already in this campaign</p>
         </div>
         <LinkButton href={`/campaigns/${id}`} variant="outline" size="sm">
           Back to campaign
@@ -48,8 +60,45 @@ export default async function AddContactsPage({ params }: { params: Promise<{ id
       </Card>
 
       <Card>
+        <CardHeader title="Add an import batch" description="Target only contacts linked to one completed import." />
+        <CardBody>
+          {importBatches.length === 0 ? (
+            <EmptyState title="No completed imports yet" description="Commit an import before targeting its contacts here." />
+          ) : (
+            <form action={addContactsToCampaignAction} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="campaignId" value={id} />
+              <input type="hidden" name="mode" value="import" />
+              <label className="min-w-[240px] flex-1 text-[12px] font-medium text-[var(--color-muted)]">
+                Imported file
+                <select name="importId" required className="mt-1 block h-10 w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-ink)]">
+                  <option value="">Select an import batch</option>
+                  {importBatches.map((batch) => (
+                    <option key={batch.id} value={batch.id}>{batch.fileName} ({batch.validRows} valid rows)</option>
+                  ))}
+                </select>
+              </label>
+              <Button type="submit">Add batch contacts</Button>
+            </form>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
         <CardHeader title="Select contacts" />
         <CardBody>
+          <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
+            <label className="min-w-[220px] flex-1 text-[12px] font-medium text-[var(--color-muted)]">
+              Search contacts
+              <input
+                name="search"
+                defaultValue={resolvedSearch}
+                placeholder="Name, email, or phone"
+                className="mt-1 block h-10 w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-ink)]"
+              />
+            </label>
+            <Button type="submit" variant="outline">Search</Button>
+            {resolvedSearch && <Link href={`/campaigns/${id}/add-contacts`} className="pb-2 text-[12px] font-medium text-[var(--color-brand)] hover:underline">Clear</Link>}
+          </form>
           {availableContacts.length === 0 ? (
             <EmptyState title="No eligible contacts" description="Every active contact is already part of this campaign, or you have none yet." />
           ) : (
@@ -74,6 +123,15 @@ export default async function AddContactsPage({ params }: { params: Promise<{ id
                 <Button type="submit">Add selected contacts</Button>
               </div>
             </form>
+          )}
+          {total > pageSize && (
+            <div className="mt-4 flex items-center justify-between border-t border-[var(--color-border)] pt-3 text-[12px] text-[var(--color-muted)]">
+              <span>Page {resolvedPage}</span>
+              <div className="flex gap-2">
+                {resolvedPage > 1 && <Link href={`/campaigns/${id}/add-contacts?page=${resolvedPage - 1}${resolvedSearch ? `&search=${encodeURIComponent(resolvedSearch)}` : ""}`} className="font-medium text-[var(--color-brand)] hover:underline">Previous</Link>}
+                {resolvedPage * pageSize < total && <Link href={`/campaigns/${id}/add-contacts?page=${resolvedPage + 1}${resolvedSearch ? `&search=${encodeURIComponent(resolvedSearch)}` : ""}`} className="font-medium text-[var(--color-brand)] hover:underline">Next</Link>}
+              </div>
+            </div>
           )}
         </CardBody>
       </Card>

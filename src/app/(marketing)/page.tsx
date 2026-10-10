@@ -7,27 +7,31 @@ import { WorkflowProcess } from "@/components/marketing/WorkflowProcess";
 import { AiSection } from "@/components/marketing/AiSection";
 import { Reveal } from "@/components/motion/Reveal";
 import { StatusPill } from "@/components/ui/Status";
+import { hasMarketingSession } from "@/lib/marketingAuth";
+import { HeroCopy } from "@/components/marketing/HeroCopy";
+import { FlowArrow } from "@/components/ui/FlowIcon";
 
 const AUDIENCES = ["Event organizers", "Schools", "Churches", "NGOs", "Agencies", "HR teams"];
 const FEATURES = [
-  ["Records", "One persistent history for every person, field, and follow-up.", "View the full contact timeline →"],
-  ["Forms & automation", "Analyze authorized forms, map data, and run durable submissions with truthful evidence.", "See form operations →"],
-  ["Campaigns", "Move cohorts through a clear queue with statuses your team can act on.", "Explore campaigns →"],
-  ["Email & SMS", "Communicate from the same operational context as the work.", "See communications →"],
-  ["Reminders", "Keep the next action visible instead of leaving it in an inbox.", "How it works →"],
-  ["Reporting", "Understand what completed, what failed, and what needs attention.", "View reporting →"],
+  ["Records", "One persistent history for every person, field, and follow-up.", "View the full contact timeline"],
+  ["Forms & automation", "Analyze authorized forms, map data, and run durable submissions with truthful evidence.", "See form operations"],
+  ["Campaigns", "Move cohorts through a clear queue with statuses your team can act on.", "Explore campaigns"],
+  ["Email & SMS", "Communicate from the same operational context as the work.", "See communications"],
+  ["Reminders", "Keep the next action visible instead of leaving it in an inbox.", "How it works"],
+  ["Reporting", "Understand what completed, what failed, and what needs attention.", "View reporting"],
 ] as const;
 
-export default function HomePage() {
+export default async function HomePage() {
+  const signedIn = await hasMarketingSession();
+
   return (
     <>
       <section className="relative overflow-hidden border-b border-[var(--color-border)] bg-[radial-gradient(circle_at_15%_0%,rgba(59,130,246,0.14),transparent_45%)]">
         <div className="mx-auto grid max-w-[1240px] gap-14 px-6 pb-20 pt-16 md:pt-24 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <Reveal>
             <Eyebrow>Connect · Automate · Move Forward</Eyebrow>
-            <h1 className="max-w-xl font-display text-[clamp(2.3rem,5vw,4rem)] font-semibold leading-[1.02] text-[var(--color-ink)]">Put every operation in flow.</h1>
-            <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[var(--color-muted)]">Manage records, automate processes, run campaigns, communicate, and track the work that keeps your organization moving.</p>
-            <div className="mt-8 flex flex-wrap items-center gap-3"><LinkButton href="/signup" size="lg">Start free <span aria-hidden="true">→</span></LinkButton><LinkButton href="/how-it-works" variant="outline" size="lg">See how Workflow works</LinkButton></div>
+            <HeroCopy />
+            <div className="mt-8 flex flex-wrap items-center gap-3"><LinkButton href={signedIn ? "/dashboard" : "/signup"} size="lg">{signedIn ? "Go to dashboard" : "Start free"} <FlowArrow className="ml-1" /></LinkButton><LinkButton href="/how-it-works" variant="outline" size="lg">See how Workflow works <FlowArrow className="ml-1" /></LinkButton></div>
             <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12.5px] text-[var(--color-muted)]"><span className="font-semibold text-[var(--color-ink-soft)]">Built for</span>{AUDIENCES.map((audience) => <span key={audience}>{audience}</span>)}</div>
           </Reveal>
           <Reveal delay={120}><PipelineDemo /></Reveal>
@@ -43,7 +47,7 @@ export default function HomePage() {
 
       <Section className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
         <SectionHeading eyebrow="The product" title="The modules your operation needs, connected by context." />
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{FEATURES.map(([title, body, link], index) => <Reveal key={title} delay={index * 45}><div className="group h-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-canvas)] p-5 transition-all duration-200 hover:-translate-y-1 hover:border-[var(--color-brand)] hover:shadow-[var(--shadow-sm)]"><div className="flex items-center justify-between"><span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">0{index + 1}</span><span className="text-[var(--color-accent)]" aria-hidden="true">↗</span></div><p className="mt-5 font-display text-[15px] font-semibold text-[var(--color-ink)]">{title}</p><p className="mt-2 text-[13px] leading-relaxed text-[var(--color-muted)]">{body}</p><Link href={title === "Forms & automation" ? "/product" : "/features"} className="mt-5 inline-flex text-[12px] font-semibold text-[var(--color-brand)]">{link}</Link></div></Reveal>)}</div>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{FEATURES.map(([title, body, link], index) => <Reveal key={title} delay={index * 45}><div className="group h-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-canvas)] p-5 transition-all duration-200 hover:-translate-y-1 hover:border-[var(--color-brand)] hover:shadow-[var(--shadow-sm)]"><div className="flex items-center justify-between"><span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">0{index + 1}</span><FlowArrow direction="up-right" className="text-[var(--color-accent)] transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></div><p className="mt-5 font-display text-[15px] font-semibold text-[var(--color-ink)]">{title}</p><p className="mt-2 text-[13px] leading-relaxed text-[var(--color-muted)]">{body}</p><Link href={title === "Forms & automation" ? "/product" : "/features"} className="mt-5 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--color-brand)]">{link} <FlowArrow className="transition-transform group-hover:translate-x-0.5" /></Link></div></Reveal>)}</div>
       </Section>
 
       <AiSection />
@@ -61,7 +65,7 @@ export default function HomePage() {
       </Section>
 
       <Section>
-        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-ink)] px-8 py-16 text-center sm:px-16"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Ready to move forward?</p><h2 className="mt-4 font-display text-[clamp(1.8rem,3vw,2.5rem)] font-semibold text-white">Ready to put your operations in flow?</h2><p className="mx-auto mt-3 max-w-lg text-[14.5px] text-white/70">Start free, bring in your first list, and see the full lifecycle from record to report.</p><div className="mt-8 flex flex-wrap justify-center gap-3"><LinkButton href="/signup" size="lg">Start free</LinkButton><Link href="/pricing" className="inline-flex h-12 items-center justify-center rounded-[var(--radius-md)] border border-white/20 px-6 text-[15px] font-medium text-white hover:bg-white/10">View pricing</Link></div></div>
+        <div className="grid items-center gap-10 rounded-[var(--radius-lg)] border border-[var(--color-cta-border)] bg-[var(--color-cta)] px-8 py-12 sm:px-16 lg:grid-cols-[1.1fr_.9fr] lg:py-14"><div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">Ready to move forward?</p><h2 className="mt-4 font-display text-[clamp(1.8rem,3vw,2.5rem)] font-semibold text-[var(--color-cta-ink)]">Ready to put your operations in flow?</h2><p className="mt-3 max-w-lg text-[14.5px] text-[var(--color-cta-muted)]">Start free, bring in your first list, and see the full lifecycle from record to report.</p><div className="mt-8 flex flex-wrap gap-3"><LinkButton href={signedIn ? "/dashboard" : "/signup"} size="lg">{signedIn ? "Go to dashboard" : "Start free"}</LinkButton><Link href="/pricing" className="inline-flex h-12 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-cta-border)] px-6 text-[15px] font-medium text-[var(--color-cta-ink)] hover:bg-[var(--color-cta-hover)]">View pricing</Link></div></div><div aria-hidden="true" className="hidden lg:block"><div className="space-y-3 rounded-[var(--radius-md)] border border-[var(--color-cta-border)] bg-[color-mix(in_srgb,var(--color-cta-ink)_6%,transparent)] p-5 text-[12px] text-[var(--color-cta-muted)]"><div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />Records ready</div><div className="ml-4 h-4 border-l border-[var(--color-cta-border)]" /><div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-[var(--color-brand)]" />Workflow in motion</div><div className="ml-4 h-4 border-l border-[var(--color-cta-border)]" /><div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />Outcome visible</div></div></div></div>
       </Section>
     </>
   );

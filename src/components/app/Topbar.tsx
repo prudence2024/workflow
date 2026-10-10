@@ -18,8 +18,8 @@ export function Topbar({
   isPlatformAdmin: boolean;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex h-16 min-w-0 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_92%,transparent)] px-4 backdrop-blur-md sm:px-6">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+    <header className="sticky top-0 z-30 flex h-16 w-full min-w-0 max-w-full items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_92%,transparent)] px-4 backdrop-blur-md sm:px-6">
+      <div className="flex min-w-0 max-w-full items-center gap-2 sm:gap-3">
         <MobileSidebar isPlatformAdmin={isPlatformAdmin} />
         <OrgSwitcher orgs={orgs} currentOrgId={currentOrg.orgId} />
         {/* Role badge is non-essential chrome at phone widths — hiding it

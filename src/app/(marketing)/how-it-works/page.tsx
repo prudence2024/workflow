@@ -15,7 +15,7 @@ export default function HowItWorksPage() {
     <Section className="pt-16">
       <SectionHeading
         eyebrow="How it works"
-        title="Import → Map → Validate → Submit → Track → Communicate → Report"
+        title="Import, map, validate, submit, track, communicate, report"
         description="A disciplined pipeline that keeps every record accountable from the moment it enters your workspace."
       />
       <div className="mt-12 space-y-0">

@@ -68,7 +68,8 @@ export async function inviteMemberAction(formData: FormData) {
 
   // The database mints the token, refuses the owner role, and audits the
   // invitation — the application cannot weaken any of those rules.
-  let token: string;
+  let token: string | null = null;
+  let planLimitMessage: string | null = null;
   try {
     token = await inWorkspace({ user, org }, async (tx) => {
     await assertPlanLimit(tx, org.orgId, "users");
@@ -78,9 +79,11 @@ export async function inviteMemberAction(formData: FormData) {
     return res.rows[0].token;
   });
   } catch (error) {
-    if (error instanceof PlanLimitError) redirect("/settings/organization?error=" + encodeURIComponent(error.message));
-    throw error;
+    if (error instanceof PlanLimitError) planLimitMessage = error.message;
+    else throw error;
   }
+
+  if (planLimitMessage) redirect("/settings/organization?error=" + encodeURIComponent(planLimitMessage));
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/invite/${token}`;
   await sendEmail({
@@ -139,17 +142,20 @@ export async function acceptInvitationAction(formData: FormData) {
   if (!user) redirect("/login");
   const token = String(formData.get("token"));
 
-  let orgId: string;
+  let orgId: string | null = null;
+  let invitationError = false;
   try {
     // No tenant context yet — the database matches the token to the signed-in
     // identity and performs the join itself.
     orgId = await withUserSession(identityOf(user!), async (tx) => {
       const res = await tx.execute<{ org_id: string }>(sql`select app.accept_invitation(${token}) as org_id`);
-      return res.rows[0].org_id;
+      return res.rows[0]?.org_id ?? null;
     });
   } catch {
-    redirect(`/invite/${token}?error=` + encodeURIComponent("This invitation is no longer valid"));
+    invitationError = true;
   }
+
+  if (invitationError || !orgId) redirect(`/invite/${token}?error=` + encodeURIComponent("This invitation is no longer valid"));
 
   await setCurrentOrgCookie(orgId);
   await logActivity({ orgId, type: "member_joined", message: `${user!.name} joined the workspace` });
@@ -257,19 +263,22 @@ export async function deleteAccountAction(formData: FormData) {
     );
   }
 
+  let deletionError: string | null = null;
   try {
     await executeDeletion(impact, {
       deletePersonalWorkspaces: deletePersonal,
       deleteSoleOwnedWorkspaces: deleteOrgs,
     });
   } catch (err) {
-    redirect("/settings/account?error=" + encodeURIComponent(err instanceof Error ? err.message : "Deletion failed partway — try again"));
+    deletionError = err instanceof Error ? err.message : "Deletion failed partway — try again";
   }
+  if (deletionError) redirect("/settings/account?error=" + encodeURIComponent(deletionError));
 
   // Clerk identity is deleted LAST so a failure here never leaves database
   // garbage: the tombstoned profile self-heals into a fresh profile on the
   // next sign-in, and a repeated request reports nothing to delete.
   if (clerkUserId) {
+    let clerkDeletionError: string | null = null;
     try {
       const { clerkClient } = await import("@clerk/nextjs/server");
       const client = await clerkClient();
@@ -278,12 +287,10 @@ export async function deleteAccountAction(formData: FormData) {
       const notFound =
         err instanceof Error && /not found|404/i.test(err.message);
       if (!notFound) {
-        redirect(
-          "/settings/account?error=" +
-            encodeURIComponent("Workspace data was removed but the sign-in identity could not be deleted — try again"),
-        );
+        clerkDeletionError = "Workspace data was removed but the sign-in identity could not be deleted — try again";
       }
     }
+    if (clerkDeletionError) redirect("/settings/account?error=" + encodeURIComponent(clerkDeletionError));
   }
 
   const { destroySession } = await import("@/lib/auth");

@@ -70,7 +70,18 @@ export default clerkMiddleware(
         authorizedPartyMatch: authorizedParties.length === 0 ? null : Boolean(requestOrigin && authorizedParties.includes(requestOrigin)),
       });
     }
-    return NextResponse.next();
+    const response = NextResponse.next();
+    const requestUrl = new URL(request.url);
+    const isRsc = request.headers.get("RSC") === "1" || requestUrl.searchParams.has("_rsc");
+    const isServerAction = request.method !== "GET" || request.headers.has("Next-Action");
+    // Dynamic HTML, RSC payloads and Server Actions must never be served from
+    // a cache entry produced by a different OpenNext deployment. Hashed
+    // _next assets remain cacheable by the Workers asset handler.
+    if (isRsc || isServerAction || !requestUrl.pathname.startsWith("/_next/")) {
+      response.headers.set("Cache-Control", "no-store, max-age=0");
+      response.headers.set("Vary", "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Url, Next-Action");
+    }
+    return response;
   },
   () => {
     const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;

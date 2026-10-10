@@ -27,7 +27,9 @@ export function BrandMark({
   tone?: "light" | "dark";
   className?: string;
 }) {
-  const src = tone === "light" ? ASSETS.iconDark : ASSETS.iconLight;
+  // The transparent artwork avoids the white square/corner halo that appears
+  // when the dark tile asset is placed on a light surface.
+  const src = tone === "light" ? ASSETS.iconLight : ASSETS.iconDark;
   return (
     <Image
       src={src}

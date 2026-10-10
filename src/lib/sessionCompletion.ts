@@ -1,9 +1,11 @@
 export const SESSION_COMPLETION_INTERVAL_MS = 750;
 export const SESSION_COMPLETION_MAX_ATTEMPTS = 15;
+export const SESSION_COMPLETION_REQUEST_TIMEOUT_MS = 8_000;
 
 export type SessionStatus = {
   authenticated: boolean;
   userReady: boolean;
+  destination?: string;
 };
 
 export type SessionCompletionDecision = "ready" | "signed_out" | "retry" | "recovery";

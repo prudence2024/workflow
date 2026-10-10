@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { getUsageCounters } from "@/lib/data";
 import { canonicalPlanKey, PLANS, PLAN_ORDER } from "@/lib/plans";
+import { formatNgnPrice } from "@/lib/pricing";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
 import { LinkButton } from "@/components/ui/Button";
@@ -37,7 +38,7 @@ export default async function UsagePage() {
       <SettingsTabs />
 
       <Card>
-        <CardHeader title="Current plan" description={`${plan.name} — $${plan.priceMonthly}/month`} action={<LinkButton href="/pricing" size="sm" variant="outline">Compare plans</LinkButton>} />
+        <CardHeader title="Current plan" description={`${plan.name} — ${formatNgnPrice(currentPlanKey)}/month`} action={<LinkButton href="/pricing" size="sm" variant="outline">Compare plans</LinkButton>} />
         <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {metrics.map((m) => {
             const used = usage[m.key] ?? 0;
@@ -66,7 +67,7 @@ export default async function UsagePage() {
             return (
               <div key={key} className={cn("rounded-[var(--radius-sm)] border p-4", isCurrent ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)]" : "border-[var(--color-border)]")}>
                 <p className="font-display text-[14.5px] font-semibold text-[var(--color-ink)]">{p.name}</p>
-                <p className="mt-1 text-[12.5px] text-[var(--color-muted)]">${p.priceMonthly}/mo</p>
+                <p className="mt-1 text-[12.5px] text-[var(--color-muted)]">{formatNgnPrice(key)}/mo</p>
                 {isCurrent && <p className="mt-2 text-[11.5px] font-semibold text-[var(--color-brand)]">Current plan</p>}
               </div>
             );

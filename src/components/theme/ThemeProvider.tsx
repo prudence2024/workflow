@@ -28,6 +28,7 @@ function applyTheme(mode: ThemeMode) {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>("system");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
+  const [initialized, setInitialized] = useState(false);
   const modeRef = useRef<ThemeMode>(mode);
   modeRef.current = mode;
 
@@ -37,10 +38,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setModeState(nextMode);
     applyTheme(nextMode);
     setResolvedTheme(resolveTheme(nextMode));
+    setInitialized(true);
   }, []);
 
   useEffect(() => {
-    if (mode !== "system") return;
+    if (!initialized || mode !== "system") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => {
       if (modeRef.current !== "system") return;
@@ -52,7 +54,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
-  }, [mode]);
+  }, [initialized, mode]);
 
   function setMode(nextMode: ThemeMode) {
     setModeState(nextMode);

@@ -95,8 +95,10 @@ export function WorkflowAiPanel() {
 
   return (
     <>
-      <button type="button" aria-label="Open Workflow AI" onClick={() => setOpen((value) => !value)} className="fixed bottom-5 right-5 z-40 rounded-full bg-[var(--color-navy)] px-4 py-3 text-sm font-semibold text-white shadow-[var(--shadow-lg)] hover:bg-[var(--color-brand-strong)]">
-        Workflow AI
+      <button type="button" aria-label="Open Workflow AI" title="Open Workflow AI" onClick={() => setOpen((value) => !value)} className="group fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-navy)] text-[11px] font-bold tracking-wide text-white shadow-[var(--shadow-lg)] transition-transform hover:scale-105 hover:bg-[var(--color-brand-strong)]">
+        <span aria-hidden="true" className="absolute inset-1 rounded-full border border-[var(--color-accent)]/70 transition-transform duration-500 group-hover:rotate-45" />
+        <span aria-hidden="true" className="absolute -inset-1 rounded-full border border-[var(--color-brand)]/30" />
+        <span className="relative">AI</span>
       </button>
       {open && (
         <section aria-label="Workflow AI assistant" className="fixed bottom-20 right-5 z-40 flex w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-lg)]">

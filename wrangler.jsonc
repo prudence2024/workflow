@@ -1,8 +1,8 @@
 {
   // Cloudflare Workers preview scaffold — DEVELOPMENT branch, TEST credentials only.
   //
-  // STATUS: runtime is Workers-ready (edge Neon transport selected by the
-  // DATABASE_RUNTIME var below; see docs/CLOUDFLARE-PREVIEW.md). Staging may
+  // STATUS: runtime is Workers-ready (Cloudflare uses the Hyperdrive binding
+  // below; see docs/CLOUDFLARE-TESTING.md). Staging may
   // only ever point at development/test resources. Do not point this at
   // production.
   "$schema": "https://developers.cloudflare.com/schemas/config/wrangler.jsonc",
@@ -10,6 +10,7 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
   "observability": { "enabled": true },
   // Workers Static Assets: serves the OpenNext client chunks, CSS and images
   // built into .open-next/assets. Without this binding every hashed client
@@ -19,8 +20,8 @@
     "binding": "ASSETS"
   },
   "vars": {
-    // Selects the Neon WebSocket transport in src/db (TCP does not exist on
-    // Workers). Node runtimes (dev, scripts, tests, migrations) ignore it.
+    // Selects the Hyperdrive transport in src/db. Node runtimes (dev, scripts,
+    // tests, migrations) ignore it.
     "DATABASE_RUNTIME": "edge",
     "NEXT_PUBLIC_APP_URL": "https://workflow-preview.example.test",
     "NEON_BRANCH": "development",
@@ -55,15 +56,25 @@
         "BUILD_GIT_SHA": "f3f2482140a4d5ddaa728ccac2c42170af8a3f08",
         "NEXT_PUBLIC_APP_URL": "https://workflow-testing.okwuborprudence.workers.dev",
         "NEON_BRANCH": "development",
+        "NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY": "pk_test_b0e177690bbc21aff27a378320d1219101d804dc",
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_c3dlZXBpbmctZ3JvdXNlLTYzNTMuY2xlcmsuYWNjb3VudHMuZGV2JA",
         "CLERK_AUTHORIZED_PARTIES": "https://workflow-testing.okwuborprudence.workers.dev",
         "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/login",
-        "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup"
+        "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup",
+        "PHONE_OTP_PROVIDER": "termii",
+        "TERMII_SENDER_ID": "Workflow",
+        "TERMII_BASE_URL": "https://api.ng.termii.com"
       },
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
           "id": "99bc46e2b05a47f4a2a732f46a9ab6af"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "UPLOADS",
+          "bucket_name": "workflow-testing-uploads"
         }
       ]
     }

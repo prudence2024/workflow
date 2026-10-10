@@ -16,19 +16,20 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     }
     redirect("/login");
   }
-  if (!user.profileComplete) redirect("/profile-completion?next=/dashboard");
   if (orgs.length === 0 || !currentOrg) redirect("/onboarding");
+  if (!user.profileComplete) redirect("/profile-completion?next=/dashboard");
 
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen w-full min-w-0 max-w-full">
       <Sidebar isPlatformAdmin={user.isPlatformAdmin} />
       {/* min-w-0 lets this flex child shrink below its content's intrinsic
           width — without it, wide tables/cards force whole-page horizontal
           scroll. Tables keep their own overflow-x-auto wrappers. */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <Topbar user={user} orgs={orgs} currentOrg={currentOrg} isPlatformAdmin={user.isPlatformAdmin} />
-        <main className="flex-1 bg-[var(--color-canvas)] px-4 py-6 sm:px-6 lg:px-8">{children}</main>\n        <WorkflowAiPanel />
+        <main className="min-w-0 w-full max-w-full flex-1 bg-[var(--color-canvas)] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <WorkflowAiPanel />
       </div>
     </div>
   );

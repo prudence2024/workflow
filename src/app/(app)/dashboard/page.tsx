@@ -10,6 +10,7 @@ import { StatusPill } from "@/components/ui/Status";
 import { LinkButton } from "@/components/ui/Button";
 import { formatDateTime, pct, timeAgo } from "@/lib/utils";
 import { canonicalPlanKey, PLANS } from "@/lib/plans";
+import { FirstRunGuide } from "@/components/app/FirstRunGuide";
 
 export const dynamic = "force-dynamic";
 
@@ -55,11 +56,15 @@ export default async function DashboardPage() {
           <LinkButton href="/contacts/new" size="sm" variant="outline">
             Add contact
           </LinkButton>
-          <LinkButton href="/campaigns/new?analyze=1" size="sm">
-            Analyze form
+          <LinkButton href="/form-operations" size="sm">
+            Test a form
           </LinkButton>
         </div>
       </div>
+
+      {contactCount.count === 0 && currentCampaigns.length === 0 && recentImports.length === 0 && recentActivity.length === 0 && (
+        <FirstRunGuide workspaceId={org.orgId} />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Total contacts" value={contactCount.count.toLocaleString()} hint={`Limit ${plan.limits.contacts.toLocaleString()}`} />

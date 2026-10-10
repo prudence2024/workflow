@@ -9,18 +9,12 @@ import {
   getCurrentUser,
   hashPassword,
   legacyAuthAllowed,
-  setCurrentOrgCookie,
   signOutCurrentIdentity,
   verifyPassword,
 } from "@/lib/auth";
-import { createOrganizationForIdentity } from "@/lib/tenant";
-import { slugify } from "@/lib/validation";
 import { eq } from "drizzle-orm";
-import { logActivity } from "@/lib/activity";
 
 const signupSchema = z.object({
-  name: z.string().min(2, "Enter your full name"),
-  organization: z.string().min(2, "Enter your organization name"),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
@@ -40,8 +34,6 @@ export async function signupAction(formData: FormData) {
   }
 
   const parsed = signupSchema.safeParse({
-    name: formData.get("name"),
-    organization: formData.get("organization"),
     email: formData.get("email"),
     password: formData.get("password"),
   });
@@ -50,8 +42,9 @@ export async function signupAction(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(parsed.error.issues[0].message)}`);
   }
 
-  const { name, organization, email, password } = parsed.data;
+  const { email, password } = parsed.data;
   const normalizedEmail = email.trim().toLowerCase();
+  const name = "Member";
 
   const existing = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
   if (existing.length > 0) {
@@ -64,14 +57,9 @@ export async function signupAction(formData: FormData) {
     .values({ name, email: normalizedEmail, passwordHash, emailVerified: true })
     .returning();
 
-  // Establish the session first, then let the database provision the workspace
-  // through the same permission-checked function the rest of the app uses.
-  const sessionToken = await createSession(user.id);
-  const slug = slugify(organization) || "workspace";
-  const orgId = await createOrganizationForIdentity({ kind: "legacy", sessionToken }, organization, slug);
-  await logActivity({ orgId, type: "org_created", message: `Workspace "${organization}" created` });
-  await setCurrentOrgCookie(orgId);
-  redirect("/dashboard");
+  // Establish identity only. Workspace/profile data belongs to onboarding.
+  await createSession(user.id);
+  redirect("/onboarding?step=workspace");
 }
 
 const loginSchema = z.object({

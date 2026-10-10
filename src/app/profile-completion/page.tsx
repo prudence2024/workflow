@@ -4,18 +4,19 @@ import { Button } from "@/components/ui/Button";
 import { FieldGroup, Input, Label, HelpText } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Surfaces";
 import { getCurrentUser } from "@/lib/auth";
+import { AuthShell } from "@/components/auth/AuthShell";
 
 export const dynamic = "force-dynamic";
 
 function safeInternalNext(value: string | undefined): string {
-  if (!value) return "/onboarding?step=plan";
+  if (!value) return "/onboarding?step=workspace";
   try {
     const decoded = decodeURIComponent(value);
     if (decoded.startsWith("/") && !decoded.startsWith("//")) return decoded;
   } catch {
     // Fall through to onboarding.
   }
-  return "/onboarding?step=plan";
+  return "/onboarding?step=workspace";
 }
 
 export default async function ProfileCompletionPage({
@@ -31,8 +32,8 @@ export default async function ProfileCompletionPage({
   if (user.profileComplete) redirect(next);
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[var(--color-canvas)] px-6 py-10">
-      <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-[var(--shadow-md)]">
+    <AuthShell eyebrow="Profile">
+      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-md)] sm:p-8">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">One last detail</p>
         <h1 className="mt-2 font-display text-[24px] font-semibold text-[var(--color-ink)]">Complete your profile</h1>
         <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--color-muted)]">
@@ -53,6 +54,6 @@ export default async function ProfileCompletionPage({
           <Button type="submit" className="w-full" size="lg">Continue</Button>
         </form>
       </div>
-    </div>
+    </AuthShell>
   );
 }

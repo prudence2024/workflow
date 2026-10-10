@@ -14,7 +14,7 @@ const GROUPS = [
   {
     title: "Imports & validation",
     items: [
-      "Upload → Inspect → Map → Validate → Preview → Import",
+      "Upload, inspect, map, validate, preview, then import",
       "Duplicate detection by email, phone, or custom identifiers",
       "Row-level error reporting before import",
       "Original files retained for audit",

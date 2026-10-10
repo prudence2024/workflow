@@ -83,7 +83,7 @@ export const PLANS: Record<LegacyPlanKey, Plan> = {
   pro: {
     key: "pro",
     name: "Pro",
-    priceMonthly: 49,
+    priceMonthly: 31_500,
     tagline: "For growing teams running real operations.",
     limits: { contacts: 10000, submissionsPerMonth: 5000, activeCampaigns: 10, users: 10, storageMb: 5000 },
     features: [
@@ -102,7 +102,7 @@ export const PLANS: Record<LegacyPlanKey, Plan> = {
   plus: {
     key: "plus",
     name: "Plus",
-    priceMonthly: 199,
+    priceMonthly: 100_000,
     tagline: "Advanced controls for larger organizations.",
     limits: { contacts: 100000, submissionsPerMonth: 50000, activeCampaigns: 50, users: 50, storageMb: 50000 },
     features: [
@@ -121,7 +121,7 @@ export const PLANS: Record<LegacyPlanKey, Plan> = {
   business: {
     key: "business",
     name: "Plus",
-    priceMonthly: 199,
+    priceMonthly: 100_000,
     tagline: "Advanced controls for larger organizations.",
     limits: { contacts: 100000, submissionsPerMonth: 50000, activeCampaigns: 50, users: 50, storageMb: 50000 },
     features: ["Every Plus capability"],

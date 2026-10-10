@@ -90,17 +90,8 @@ export default async function CommunicationsPage({
 
       {unconfigured.length > 0 && (
         <Alert tone="warning">
-          <strong>Provider credentials are missing for {unconfigured.map((u) => u.channel).join(" and ")}.</strong>{" "}
-          Messages will queue and then be released without sending — this screen will never report them as
-          delivered. Configure{" "}
-          {unconfigured.some((u) => u.channel === "email") && (
-            <code className="rounded bg-[var(--color-surface-raised)] px-1">RESEND_API_KEY</code>
-          )}
-          {unconfigured.length === 2 && " and "}
-          {unconfigured.some((u) => u.channel === "sms") && (
-            <code className="rounded bg-[var(--color-surface-raised)] px-1">TERMII_API_KEY</code>
-          )}{" "}
-          to enable real dispatch.
+          <strong>Email or SMS sending is temporarily unavailable for this workspace.</strong>{" "}
+          Messages will remain queued and will never be shown as delivered until the relevant sending service is available.
         </Alert>
       )}
 
@@ -195,7 +186,6 @@ export default async function CommunicationsPage({
                   </Label>
                   <Input id="subject" name="subject" placeholder="Use the template subject" />
                 </FieldGroup>
-                <input type="hidden" name="batchKey" value={`manual-${Date.now().toString(36)}`} />
                 <div className="rounded-[var(--radius-sm)] bg-[var(--color-canvas)] p-3 text-[12.5px] leading-relaxed text-[var(--color-muted)]">
                   Queued sends run through the durable outbox and are dispatched by a worker. Retries use
                   exponential backoff; an uncertain provider outcome is parked for human review instead of

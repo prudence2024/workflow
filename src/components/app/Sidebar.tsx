@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactElement } from "react";
+import { useSyncExternalStore, type ReactElement } from "react";
 import { cn } from "@/lib/utils";
-import { BrandLockup } from "@/components/brand/Logo";
+import { BrandLockup, BrandMark } from "@/components/brand/Logo";
 
 const ICONS: Record<string, ReactElement> = {
   dashboard: (
@@ -13,6 +13,7 @@ const ICONS: Record<string, ReactElement> = {
   contacts: <path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0" />,
   campaigns: <path d="M3 11l18-7-7 18-2-8-9-3z" />,
   imports: <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />,
+  downloads: <path d="M5 4h14v16H5V4zm3 4h8m-8 4h8m-8 4h5" />,
   templates: <path d="M4 4h16v16H4V4zm4 4h8m-8 4h8m-8 4h5" />,
   communications: <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
   forms: <path d="M4 3h16v18H4zM8 8h8M8 12h8M8 16h4" />,
@@ -31,11 +32,20 @@ function Icon({ name }: { name: string }) {
   );
 }
 
+function Chevron({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d={direction === "left" ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} />
+    </svg>
+  );
+}
+
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
   { href: "/contacts", label: "Records", icon: "contacts" },
   { href: "/campaigns", label: "Campaigns", icon: "campaigns" },
   { href: "/imports", label: "Imports", icon: "imports" },
+  { href: "/downloads", label: "Downloads", icon: "downloads" },
   { href: "/communications", label: "Communications", icon: "communications" },
   { href: "/form-operations", label: "Form operations", icon: "forms" },
   { href: "/templates", label: "Templates", icon: "templates" },
@@ -43,38 +53,69 @@ const NAV = [
   { href: "/settings/organization", label: "Settings", icon: "settings" },
 ];
 
-export function Sidebar({ isPlatformAdmin, asMobile = false }: { isPlatformAdmin: boolean; asMobile?: boolean }) {
+const SIDEBAR_STORAGE_KEY = "workflow:sidebar-collapsed";
+const SIDEBAR_CHANGE_EVENT = "workflow:sidebar-collapsed-change";
+
+function subscribeSidebarPreference(listener: () => void) {
+  window.addEventListener("storage", listener);
+  window.addEventListener(SIDEBAR_CHANGE_EVENT, listener);
+  return () => {
+    window.removeEventListener("storage", listener);
+    window.removeEventListener(SIDEBAR_CHANGE_EVENT, listener);
+  };
+}
+
+function readSidebarPreference(): boolean {
+  return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+}
+
+export function Sidebar({ isPlatformAdmin, asMobile = false, onNavigate }: { isPlatformAdmin: boolean; asMobile?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const storedCollapsed = useSyncExternalStore(subscribeSidebarPreference, readSidebarPreference, () => false);
+  const collapsed = asMobile ? false : storedCollapsed;
+
+  function toggleCollapsed() {
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(!storedCollapsed));
+    window.dispatchEvent(new Event(SIDEBAR_CHANGE_EVENT));
+  }
 
   return (
     <aside
       className={cn(
-        "w-[228px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]",
+        "shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] transition-[width] duration-200",
         // Desktop: stay pinned while page content scrolls; the nav area scrolls
         // internally when it exceeds the viewport. Mobile drawer keeps h-full
         // inside its fixed container (never sticky).
-        asMobile ? "flex h-full" : "hidden lg:sticky lg:top-0 lg:h-screen lg:flex",
+        asMobile ? "flex h-full w-full" : collapsed ? "hidden w-[72px] lg:sticky lg:top-0 lg:h-screen lg:flex" : "hidden w-[228px] lg:sticky lg:top-0 lg:h-screen lg:flex",
       )}
     >
-      <div className="flex h-16 items-center border-b border-[var(--color-border)] px-5">
-        <BrandLockup href="/dashboard" size={28} />
+      <div className={cn("relative flex h-16 items-center border-b border-[var(--color-border)]", collapsed && !asMobile ? "justify-center px-2" : "justify-between px-5")}>
+        {collapsed && !asMobile ? <Link href="/dashboard" className="-translate-y-2" aria-label="Workflow dashboard"><BrandMark size={28} /></Link> : <BrandLockup href="/dashboard" size={28} />}
+        {!asMobile && (
+          <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-pressed={collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} className={cn("rounded-md text-[var(--color-muted)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]", collapsed ? "absolute bottom-1 right-1 p-0.5" : "p-1.5")}>
+            <Chevron direction={collapsed ? "right" : "left"} />
+          </button>
+        )}
       </div>
-      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav className={cn("min-h-0 flex-1 space-y-1 overflow-y-auto py-4", collapsed && !asMobile ? "px-2" : "px-3")}>
         {NAV.map((item) => {
           const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
+              title={collapsed && !asMobile ? item.label : undefined}
               className={cn(
-                "flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium transition-colors",
+                "group flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium transition-colors",
+                collapsed && !asMobile && "justify-center px-2",
                 active
                   ? "bg-[var(--color-brand-soft)] text-[var(--color-brand)]"
                   : "text-[var(--color-ink-soft)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]",
               )}
             >
-              <Icon name={item.icon} />
-              {item.label}
+              <span data-nav-icon={item.icon} className={cn("sidebar-icon shrink-0 transition-transform duration-200", item.icon === "imports" && "group-hover:translate-y-0.5 group-focus-visible:translate-y-0.5", item.icon === "campaigns" && "group-hover:-translate-y-0.5 group-focus-visible:-translate-y-0.5", item.icon === "settings" && "group-hover:rotate-12 group-focus-visible:rotate-12", item.icon === "dashboard" && "group-hover:scale-105 group-focus-visible:scale-105", item.icon === "contacts" && "group-hover:translate-x-0.5 group-focus-visible:translate-x-0.5", item.icon === "communications" && "group-hover:-translate-x-0.5 group-focus-visible:-translate-x-0.5", item.icon === "reports" && "group-hover:scale-y-110 group-focus-visible:scale-y-110", item.icon === "forms" && "group-hover:-rotate-3 group-focus-visible:-rotate-3", item.icon === "templates" && "group-hover:rotate-3 group-focus-visible:rotate-3", "motion-reduce:transform-none motion-reduce:transition-none") }><Icon name={item.icon} /></span>
+              <span className={cn(collapsed && !asMobile && "sr-only")}>{item.label}</span>
             </Link>
           );
         })}
@@ -83,23 +124,27 @@ export function Sidebar({ isPlatformAdmin, asMobile = false }: { isPlatformAdmin
             <div className="my-2 h-px bg-[var(--color-border)]" />
             <Link
               href="/platform-admin"
+              onClick={onNavigate}
+              title={collapsed && !asMobile ? "Platform Admin" : undefined}
               className={cn(
-                "flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium transition-colors",
+                "group flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium transition-colors",
+                collapsed && !asMobile && "justify-center px-2",
                 pathname.startsWith("/platform-admin")
                   ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
                   : "text-[var(--color-ink-soft)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]",
               )}
             >
-              <Icon name="admin" />
-              Platform Admin
+              <span className="transition-transform duration-200 group-hover:scale-105"><Icon name="admin" /></span>
+              <span className={cn(collapsed && !asMobile && "sr-only")}>Platform Admin</span>
             </Link>
           </>
         )}
       </nav>
-      <div className="border-t border-[var(--color-border)] p-4">
-        <Link href="/settings/usage" className="block rounded-[var(--radius-sm)] bg-[var(--color-canvas)] p-3">
-          <p className="text-[11.5px] font-semibold text-[var(--color-ink-soft)]">Usage this month</p>
-          <p className="mt-0.5 text-[11.5px] text-[var(--color-muted)]">View limits →</p>
+      <div className={cn("border-t border-[var(--color-border)]", collapsed && !asMobile ? "p-2" : "p-4")}>
+        <Link href="/settings/usage" onClick={onNavigate} title={collapsed && !asMobile ? "Usage and plan" : undefined} className={cn("block rounded-[var(--radius-sm)] bg-[var(--color-canvas)] p-3", collapsed && !asMobile && "flex justify-center text-[var(--color-ink-soft)]")}>
+          <p className={cn("text-[11.5px] font-semibold text-[var(--color-ink-soft)]", collapsed && !asMobile && "sr-only")}>Usage this month</p>
+          <p className={cn("mt-0.5 text-[11.5px] text-[var(--color-muted)]", collapsed && !asMobile && "sr-only")}>View limits</p>
+          {collapsed && !asMobile && <><Icon name="reports" /><span className="sr-only">View usage limits</span></>}
         </Link>
       </div>
     </aside>

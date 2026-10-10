@@ -865,6 +865,7 @@ export type CampaignRecordRow = {
 export async function getCampaignDetail(
   workspace: Workspace,
   campaignId: string,
+  options: { page?: number; pageSize?: number } = {},
 ): Promise<{
   campaign: {
     id: string;
@@ -880,9 +881,16 @@ export async function getCampaignDetail(
     updatedAt: Date;
   } | null;
   records: CampaignRecordRow[];
+  recordsTotal: number;
+  recordsPage: number;
+  recordsPageSize: number;
   templates: { id: string; name: string }[];
   customFields: { key: string; label: string }[];
 }> {
+  const recordsPageSize = Math.min(50, Math.max(10, Math.trunc(options.pageSize ?? 50)));
+  const recordsPage = Math.max(1, Math.trunc(options.page ?? 1));
+  const recordsOffset = (recordsPage - 1) * recordsPageSize;
+
   return timedRuntimeStage("campaign.detail", () => inWorkspace(workspace, async (tx) => {
     const campaignRes = await tx.execute<{
       id: string;
@@ -903,9 +911,15 @@ export async function getCampaignDetail(
        limit 1
     `);
     if (campaignRes.rows.length === 0) {
-      return { campaign: null, records: [], templates: [], customFields: [] };
+      return { campaign: null, records: [], recordsTotal: 0, recordsPage, recordsPageSize, templates: [], customFields: [] };
     }
     const c = campaignRes.rows[0];
+
+    const recordCount = await tx.execute<{ total: number }>(sql`
+      select count(*)::int as total
+        from public.campaign_records
+       where campaign_id = ${campaignId}::uuid
+    `);
 
     const records = await tx.execute<{
       id: string;
@@ -920,22 +934,30 @@ export async function getCampaignDetail(
       submission_evidence: Record<string, unknown> | null;
     }>(sql`
       select r.id, r.status, r.result_message, r.attempts, r.updated_at,
-             r.submission_evidence,
+             jsonb_build_object(
+               'confirmationExcerpt', r.submission_evidence->>'confirmationExcerpt',
+               'finalUrl', r.submission_evidence->>'finalUrl',
+               'submittedAt', r.submission_evidence->>'submittedAt',
+               'confirmationType', r.submission_evidence->>'confirmationType'
+             ) as submission_evidence,
              c.id as contact_id, c.first_name, c.last_name, c.email
         from public.campaign_records r
         join public.contacts c on c.id = r.contact_id
        where r.campaign_id = ${campaignId}::uuid
        order by r.updated_at desc
-       limit 100
+       limit ${recordsPageSize} offset ${recordsOffset}
     `);
 
     const templates = await tx.execute<{ id: string; name: string }>(sql`
-      select id, name from public.message_templates order by name
+      select id, name from public.message_templates order by name limit 50
     `);
 
     const fields = await tx.execute<{ key: string; label: string }>(sql`
-      select key, label from public.custom_field_definitions order by created_at
+      select key, label from public.custom_field_definitions order by created_at limit 100
     `);
+
+    const formDefinition = Array.isArray(c.form_definition) ? c.form_definition.slice(0, 100) : [];
+    const fieldMapping = Object.fromEntries(Object.entries(c.field_mapping ?? {}).slice(0, 100));
 
     return {
       campaign: {
@@ -946,8 +968,8 @@ export async function getCampaignDetail(
         formUrl: c.form_url,
          formAnalysisStatus: c.form_analysis_status,
          formAnalysisError: c.form_analysis_error,
-        formDefinition: c.form_definition ?? [],
-        fieldMapping: c.field_mapping ?? {},
+         formDefinition,
+         fieldMapping,
         stats: c.stats ?? {},
         updatedAt: c.updated_at,
       },
@@ -962,10 +984,58 @@ export async function getCampaignDetail(
         email: r.email,
         evidence: r.submission_evidence,
       })),
+       recordsTotal: Number(recordCount.rows[0]?.total ?? 0),
+       recordsPage,
+       recordsPageSize,
       templates: templates.rows,
       customFields: fields.rows,
     };
   }), { tenantScoped: true });
+}
+
+/** Lightweight status read used while a browser worker is processing a run. */
+export async function getCampaignStatus(
+  workspace: Workspace,
+  campaignId: string,
+): Promise<{
+  campaign: { status: string; formAnalysisStatus: string; stats: Record<string, number>; updatedAt: Date } | null;
+  active: boolean;
+  activeRecords: number;
+}> {
+  return inWorkspace(workspace, async (tx) => {
+    const result = await tx.execute<{
+      status: string;
+      form_analysis_status: string;
+      stats: Record<string, number> | null;
+      updated_at: Date;
+      active_records: number;
+    }>(sql`
+      select c.status, c.form_analysis_status, c.stats, c.updated_at,
+             (select count(*)::int from public.campaign_records r
+               where r.campaign_id = c.id
+                 and r.status in ('queued', 'retrying', 'processing')) as active_records
+        from public.campaigns c
+       where c.id = ${campaignId}::uuid
+       limit 1
+    `);
+    const row = result.rows[0];
+    if (!row) return { campaign: null, active: false, activeRecords: 0 };
+    const activeRecords = Number(row.active_records ?? 0);
+    const active = row.status === "running" ||
+      row.form_analysis_status === "queued" ||
+      row.form_analysis_status === "processing" ||
+      activeRecords > 0;
+    return {
+      campaign: {
+        status: row.status,
+        formAnalysisStatus: row.form_analysis_status,
+        stats: row.stats ?? {},
+        updatedAt: row.updated_at,
+      },
+      active,
+      activeRecords,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1108,6 +1178,7 @@ export async function getImportDetail(
 export async function getCampaignAudienceCandidates(
   workspace: Workspace,
   campaignId: string,
+  options: { page?: number; pageSize?: number; search?: string } = {},
 ): Promise<{
   campaign: { id: string; name: string } | null;
   availableContacts: {
@@ -1117,12 +1188,35 @@ export async function getCampaignAudienceCandidates(
     email: string | null;
     phone: string | null;
   }[];
+  total: number;
+  page: number;
+  pageSize: number;
+  search: string;
 }> {
+  const pageSize = Math.min(50, Math.max(10, Math.trunc(options.pageSize ?? 50)));
+  const page = Math.max(1, Math.trunc(options.page ?? 1));
+  const search = String(options.search ?? "").trim().slice(0, 80);
+  const searchClause = search
+    ? sql`and (c.first_name ilike ${`%${search}%`} or c.last_name ilike ${`%${search}%`} or c.email ilike ${`%${search}%`} or c.phone ilike ${`%${search}%`})`
+    : sql``;
+  const offset = (page - 1) * pageSize;
+
   return inWorkspace(workspace, async (tx) => {
     const c = await tx.execute<{ id: string; name: string }>(sql`
       select id, name from public.campaigns where id = ${campaignId}::uuid limit 1
     `);
-    if (c.rows.length === 0) return { campaign: null, availableContacts: [] };
+    if (c.rows.length === 0) return { campaign: null, availableContacts: [], total: 0, page, pageSize, search };
+
+    const totalRes = await tx.execute<{ total: number }>(sql`
+      select count(*)::int as total
+        from public.contacts c
+       where c.archived_at is null
+         ${searchClause}
+         and not exists (
+           select 1 from public.campaign_records cr
+            where cr.campaign_id = ${campaignId}::uuid and cr.contact_id = c.id
+         )
+    `);
 
     const res = await tx.execute<{
       id: string;
@@ -1134,12 +1228,13 @@ export async function getCampaignAudienceCandidates(
       select c.id, c.first_name, c.last_name, c.email, c.phone
         from public.contacts c
        where c.archived_at is null
+         ${searchClause}
          and not exists (
            select 1 from public.campaign_records cr
             where cr.campaign_id = ${campaignId}::uuid and cr.contact_id = c.id
          )
        order by c.created_at desc
-       limit 200
+       limit ${pageSize} offset ${offset}
     `);
     return {
       campaign: c.rows[0],
@@ -1150,7 +1245,48 @@ export async function getCampaignAudienceCandidates(
         email: r.email,
         phone: r.phone,
       })),
+      total: Number(totalRes.rows[0]?.total ?? 0),
+      page,
+      pageSize,
+      search,
     };
+  });
+}
+
+export type CampaignImportBatch = {
+  id: string;
+  fileName: string;
+  status: string;
+  totalRows: number;
+  validRows: number;
+  createdAt: Date;
+};
+
+/** Import batches available for tenant-scoped campaign audience selection. */
+export async function getCampaignImportBatches(workspace: Workspace): Promise<CampaignImportBatch[]> {
+  return inWorkspace(workspace, async (tx) => {
+    const result = await tx.execute<{
+      id: string;
+      file_name: string;
+      status: string;
+      total_rows: number;
+      valid_rows: number;
+      created_at: Date;
+    }>(sql`
+      select id, file_name, status, total_rows, valid_rows, created_at
+        from public.imports
+       where status = 'imported'
+       order by created_at desc
+       limit 100
+    `);
+    return result.rows.map((row) => ({
+      id: row.id,
+      fileName: row.file_name,
+      status: row.status,
+      totalRows: row.total_rows,
+      validRows: row.valid_rows,
+      createdAt: row.created_at,
+    }));
   });
 }
 
@@ -1166,6 +1302,7 @@ export type ContactExportRow = {
   address: string | null;
   status: string;
   createdAt: Date;
+  customFields: Record<string, string>;
 };
 
 export async function listContactExportRows(workspace: Workspace): Promise<ContactExportRow[]> {
@@ -1179,8 +1316,9 @@ export async function listContactExportRows(workspace: Workspace): Promise<Conta
       address: string | null;
       status: string;
       created_at: Date;
+      custom_fields: Record<string, string> | null;
     }>(sql`
-      select first_name, last_name, email, phone, company, address, status, created_at
+      select first_name, last_name, email, phone, company, address, status, created_at, custom_fields
         from public.contacts
        where archived_at is null
        order by created_at desc
@@ -1194,6 +1332,7 @@ export async function listContactExportRows(workspace: Workspace): Promise<Conta
       address: r.address,
       status: r.status,
       createdAt: r.created_at,
+      customFields: r.custom_fields ?? {},
     }));
   });
 }
@@ -1476,9 +1615,10 @@ export async function getContactDetail(workspace: Workspace, contactId: string):
         join public.tags t on t.id = ct.tag_id
        where ct.contact_id = ${contactId}::uuid
        order by t.name
+       limit 100
     `);
     const allTagsRes = await tx.execute<{ id: string; name: string }>(sql`
-      select id, name from public.tags order by name
+      select id, name from public.tags order by name limit 100
     `);
     const campaignHistoryRes = await tx.execute<{
       id: string;
@@ -1494,6 +1634,7 @@ export async function getContactDetail(workspace: Workspace, contactId: string):
         join public.campaigns c on c.id = cr.campaign_id
        where cr.contact_id = ${contactId}::uuid
        order by cr.updated_at desc
+       limit 50
     `);
     const notesRes = await tx.execute<{ id: string; body: string; author: string | null; created_at: Date }>(sql`
       select n.id, n.body, u.name as author, n.created_at
@@ -1564,6 +1705,57 @@ export async function getContactDetail(workspace: Workspace, contactId: string):
       emailConsent: row.email_consent,
       smsConsent: row.sms_consent,
     };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Downloads — tenant-scoped files already stored in R2/local development.
+// ---------------------------------------------------------------------------
+export type DownloadRow = {
+  id: string;
+  kind: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: Date;
+};
+
+export async function listDownloads(workspace: Workspace): Promise<DownloadRow[]> {
+  return inWorkspace(workspace, async (tx) => {
+    const result = await tx.execute<{
+      id: string;
+      kind: string;
+      file_name: string;
+      mime_type: string;
+      size_bytes: number;
+      created_at: Date;
+    }>(sql`
+      select id, kind, file_name, mime_type, size_bytes, created_at
+        from public.files
+       order by created_at desc
+       limit 50
+    `);
+    return result.rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      fileName: row.file_name,
+      mimeType: row.mime_type,
+      sizeBytes: row.size_bytes,
+      createdAt: row.created_at,
+    }));
+  });
+}
+
+export async function getDownload(workspace: Workspace, fileId: string): Promise<{ fileName: string; mimeType: string; storagePath: string } | null> {
+  return inWorkspace(workspace, async (tx) => {
+    const result = await tx.execute<{ file_name: string; mime_type: string; storage_path: string }>(sql`
+      select file_name, mime_type, storage_path
+        from public.files
+       where id = ${fileId}::uuid
+       limit 1
+    `);
+    const row = result.rows[0];
+    return row ? { fileName: row.file_name, mimeType: row.mime_type, storagePath: row.storage_path } : null;
   });
 }
 

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   decideSessionCompletion,
   SESSION_COMPLETION_INTERVAL_MS,
+  SESSION_COMPLETION_REQUEST_TIMEOUT_MS,
   type SessionStatus,
 } from "@/lib/sessionCompletion";
 
@@ -18,6 +19,7 @@ export function SessionCompletion({ next }: { next: string }) {
   const completed = useRef(false);
   const timer = useRef<number | null>(null);
   const runVersion = useRef(0);
+  const checkRef = useRef<() => Promise<void>>(async () => {});
 
   const check = useCallback(async () => {
     if (!isLoaded || completed.current) return;
@@ -28,12 +30,14 @@ export function SessionCompletion({ next }: { next: string }) {
     try {
       const response = await fetch("/api/auth/session-status", {
         cache: "no-store",
+        signal: AbortSignal.timeout(SESSION_COMPLETION_REQUEST_TIMEOUT_MS),
         headers: { Accept: "application/json" },
       });
       const body = (await response.json()) as Partial<SessionStatus>;
       server = {
         authenticated: body.authenticated === true,
         userReady: body.userReady === true,
+        destination: typeof body.destination === "string" ? body.destination : undefined,
       };
     } catch {
       // Keep the browser in the bounded readiness window. The server remains
@@ -50,7 +54,7 @@ export function SessionCompletion({ next }: { next: string }) {
 
     if (decision === "ready") {
       completed.current = true;
-      window.location.replace(next);
+      window.location.replace(server.destination ?? next);
       return;
     }
     if (decision === "signed_out") {
@@ -63,16 +67,17 @@ export function SessionCompletion({ next }: { next: string }) {
       return;
     }
 
-    timer.current = window.setTimeout(() => void check(), SESSION_COMPLETION_INTERVAL_MS);
+    timer.current = window.setTimeout(() => void checkRef.current(), SESSION_COMPLETION_INTERVAL_MS);
   }, [isLoaded, isSignedIn, next]);
 
   useEffect(() => {
+    checkRef.current = check;
     runVersion.current += 1;
     attempts.current = 0;
     completed.current = false;
-    setPhase("checking");
     void check();
     return () => {
+      checkRef.current = async () => {};
       runVersion.current += 1;
       if (timer.current !== null) window.clearTimeout(timer.current);
       timer.current = null;
@@ -105,7 +110,10 @@ export function SessionCompletion({ next }: { next: string }) {
             <div className="mt-6 grid gap-2">
               <button
                 type="button"
-                onClick={() => setRetryKey((value) => value + 1)}
+                onClick={() => {
+                  setPhase("checking");
+                  setRetryKey((value) => value + 1);
+                }}
                 className="h-11 rounded-[var(--radius-sm)] bg-[var(--color-brand)] px-4 text-sm font-medium text-white hover:bg-[var(--color-brand-strong)]"
               >
                 Try again

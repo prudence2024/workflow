@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { parseGoogleQuestionText, providerForUrl } from "@/lib/formProviders";
+import { suggestMapping } from "@/lib/formAnalysis";
 
 describe("provider routing", () => {
   it("routes Google Forms hosts to the google adapter", () => {
@@ -35,5 +36,21 @@ describe("google question parsing", () => {
 
   it("falls back to a positional label for empty text", () => {
     expect(parseGoogleQuestionText("   ", 2).label).toBe("Question 3");
+  });
+});
+
+describe("semantic field mapping", () => {
+  it("maps common spreadsheet aliases without depending on column order", () => {
+    expect(
+      suggestMapping(
+        ["mobile", "email_address", "surname", "given_name"],
+        [
+          { name: "firstName", label: "First name", type: "text", required: true },
+          { name: "lastName", label: "Last name", type: "text", required: false },
+          { name: "email", label: "Email", type: "email", required: true },
+          { name: "phone", label: "Phone", type: "phone", required: false },
+        ],
+      ),
+    ).toEqual({ firstName: "given_name", lastName: "surname", email: "email_address", phone: "mobile" });
   });
 });

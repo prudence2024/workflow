@@ -14,14 +14,14 @@ const profileSchema = z.object({
 });
 
 function safeInternalNext(value: string | undefined): string {
-  if (!value) return "/onboarding?step=plan";
+  if (!value) return "/onboarding?step=workspace";
   try {
     const decoded = decodeURIComponent(value);
     if (decoded.startsWith("/") && !decoded.startsWith("//")) return decoded;
   } catch {
     // Fall through to onboarding.
   }
-  return "/onboarding?step=plan";
+  return "/onboarding?step=workspace";
 }
 
 export async function completeProfileAction(formData: FormData) {
@@ -43,15 +43,18 @@ export async function completeProfileAction(formData: FormData) {
 
   // Clerk remains the identity source of truth. The local profile is updated
   // only after Clerk accepts the required identity fields.
+  let clerkSaveFailed = false;
   if (user.clerkUserId) {
     try {
       const { clerkClient } = await import("@clerk/nextjs/server");
       const client = await clerkClient();
       await client.users.updateUser(user.clerkUserId, { firstName, lastName });
     } catch {
-      redirect(`/profile-completion?error=${encodeURIComponent("We could not save your name yet. Please try again.")}`);
+      clerkSaveFailed = true;
     }
   }
+
+  if (clerkSaveFailed) redirect(`/profile-completion?error=${encodeURIComponent("We could not save your name yet. Please try again.")}`);
 
   await db.update(users).set({ name: fullName }).where(eq(users.id, user.id));
   redirect(safeInternalNext(parsed.data.next));

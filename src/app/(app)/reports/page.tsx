@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { listReportCampaigns } from "@/lib/data";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui/Surfaces";
-import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
 import { TD, TH, THead, TR, Table } from "@/components/ui/Data";
 import { pct } from "@/lib/utils";
@@ -26,12 +25,12 @@ export default async function ReportsPage() {
           <p className="mt-0.5 text-[13.5px] text-[var(--color-muted)]">Success rate, failures, and exports per campaign</p>
         </div>
         <div className="flex gap-2">
-          <LinkButton href="/api/exports/contacts?format=csv" variant="outline" size="sm">
+          <a href="/api/exports/contacts?format=csv" download="contacts.csv" className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-[13px] font-medium text-[var(--color-ink)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]">
             Export contacts (CSV)
-          </LinkButton>
-          <LinkButton href="/api/exports/contacts?format=xlsx" variant="outline" size="sm">
+          </a>
+          <a href="/api/exports/contacts?format=xlsx" download="contacts.xlsx" className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-[13px] font-medium text-[var(--color-ink)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]">
             Export contacts (XLSX)
-          </LinkButton>
+          </a>
         </div>
       </div>
 
@@ -73,12 +72,12 @@ export default async function ReportsPage() {
                     </TD>
                     <TD>
                       <div className="flex gap-2">
-                        <LinkButton href={`/api/exports/campaigns/${c.id}?format=csv`} variant="ghost" size="sm">
+                        <a href={`/api/exports/campaigns/${c.id}?format=csv`} download={`${c.name}-report.csv`} className="inline-flex items-center justify-center whitespace-nowrap px-3 py-2 text-[13px] font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-brand)]">
                           CSV
-                        </LinkButton>
-                        <LinkButton href={`/api/exports/campaigns/${c.id}?format=xlsx`} variant="ghost" size="sm">
+                        </a>
+                        <a href={`/api/exports/campaigns/${c.id}?format=xlsx`} download={`${c.name}-report.xlsx`} className="inline-flex items-center justify-center whitespace-nowrap px-3 py-2 text-[13px] font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-brand)]">
                           XLSX
-                        </LinkButton>
+                        </a>
                       </div>
                     </TD>
                   </TR>

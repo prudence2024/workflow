@@ -27,6 +27,11 @@
   --color-accent: #14b8a6;
   --color-accent-strong: #0d9488;
   --color-accent-soft: #e6faf7;
+  --color-cta: #0b1f3b;
+  --color-cta-ink: #ffffff;
+  --color-cta-muted: rgba(255, 255, 255, 0.72);
+  --color-cta-border: rgba(255, 255, 255, 0.2);
+  --color-cta-hover: rgba(255, 255, 255, 0.1);
 
   --color-success: #1a7f4e;
   --color-success-soft: #e6f5ec;
@@ -66,6 +71,11 @@
   --color-accent: #2dd4bf;
   --color-accent-strong: #14b8a6;
   --color-accent-soft: #123e43;
+  --color-cta: #1b2c45;
+  --color-cta-ink: #f2f6fc;
+  --color-cta-muted: #c2cee0;
+  --color-cta-border: #46607e;
+  --color-cta-hover: #263b58;
   --color-success: #5bd69a;
   --color-success-soft: #123f31;
   --color-warning: #f7bd67;
@@ -87,13 +97,49 @@
 
 html {
   scroll-behavior: smooth;
+  background: var(--color-canvas);
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 body {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-body);
 }
+
+/* Tailwind uses individual translate/rotate/scale properties. Reset all of
+   them, as transform:none alone leaves hover translation active. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-icon {
+    --workflow-motion-reset: none;
+    transform: none !important;
+    translate: var(--workflow-motion-reset) !important;
+    rotate: var(--workflow-motion-reset) !important;
+    scale: var(--workflow-motion-reset) !important;
+    transition: none !important;
+  }
+}
+
+.auth-brand-panel { background: linear-gradient(145deg, #eef6ff 0%, #e6f1fb 52%, #e8faf7 100%); }
+.auth-brand-glow { background: radial-gradient(circle at 18% 18%, rgba(59,130,246,.18), transparent 42%), radial-gradient(circle at 82% 78%, rgba(20,184,166,.14), transparent 38%); }
+.auth-brand-text { color: #0b1f3b; }
+.auth-brand-muted { color: #405672; }
+.auth-brand-list { border-color: rgba(11,31,59,.14); }
+.auth-brand-list > div { color: #304966; }
+.auth-logo-dark { display: none; }
+.auth-main-panel { background: #f7faff; }
+[data-theme="dark"] .auth-brand-panel { background: #0b1f3b; }
+[data-theme="dark"] .auth-brand-text { color: #fff; }
+[data-theme="dark"] .auth-brand-muted { color: rgba(255,255,255,.7); }
+[data-theme="dark"] .auth-brand-list { border-color: rgba(255,255,255,.1); }
+[data-theme="dark"] .auth-brand-list > div { color: rgba(255,255,255,.8); }
+[data-theme="dark"] .auth-logo-light { display: none; }
+[data-theme="dark"] .auth-logo-dark { display: block; }
+[data-theme="dark"] .auth-main-panel { background: var(--color-canvas); }
 
 button, a, select, input, textarea {
   -webkit-tap-highlight-color: transparent;
@@ -144,7 +190,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .reveal[data-reveal-ready="true"]:not([data-reveal-visible="true"]) {
   opacity: 0;
-  transform: translateY(18px);
+  transform: translateY(10px) scale(0.96);
 }
 
 .reveal[data-reveal-ready="true"] {
@@ -189,4 +235,14 @@ h1, h2, h3, h4, h5, h6 {
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--color-border-strong);
   border-radius: 999px;
+}
+
+@media print {
+  body:has(.receipt-print-page) { background: #fff !important; }
+  body:has(.receipt-print-page) .receipt-no-print,
+  body:has(.receipt-print-page) nav,
+  body:has(.receipt-print-page) aside,
+  body:has(.receipt-print-page) header { display: none !important; }
+  body:has(.receipt-print-page) main { padding: 0 !important; }
+  body:has(.receipt-print-page) .receipt-print-page { max-width: none !important; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
 }

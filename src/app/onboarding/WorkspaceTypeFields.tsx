@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FieldGroup, HelpText, Input, Label } from "@/components/ui/Field";
+import { FieldGroup, Label } from "@/components/ui/Field";
 
 export function WorkspaceTypeFields() {
   const [accountType, setAccountType] = useState<"personal" | "organization">("personal");
@@ -45,18 +45,12 @@ export function WorkspaceTypeFields() {
           </label>
         </div>
       </FieldGroup>
-      {accountType === "organization" ? (
-        <FieldGroup>
-          <Label htmlFor="name">Organization name <span className="text-[var(--color-danger)]" aria-hidden="true">*</span></Label>
-          <Input id="name" name="name" placeholder="Grace Community Church" minLength={2} required aria-required="true" autoComplete="organization" />
-          <HelpText>Use the name your team will recognize. You can invite teammates after setup.</HelpText>
-        </FieldGroup>
-      ) : (
+      {accountType === "personal" ? (
         <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-canvas)] p-4">
           <p className="text-[13px] font-semibold text-[var(--color-ink)]">Personal workspace</p>
           <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--color-muted)]">We will name this workspace from your profile. No organization name is needed.</p>
         </div>
-      )}
+      ) : <p className="text-[12.5px] text-[var(--color-muted)]">You will name the organization on the next step.</p>}
     </>
   );
 }

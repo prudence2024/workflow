@@ -5,7 +5,7 @@ export function Card({ children, className }: { children: ReactNode; className?:
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]",
+        "min-w-0 max-w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]",
         className,
       )}
     >
@@ -24,12 +24,12 @@ export function CardHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
-      <div>
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
+      <div className="min-w-0">
         <h3 className="font-display text-[15px] font-semibold text-[var(--color-ink)]">{title}</h3>
         {description && <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">{description}</p>}
       </div>
-      {action}
+      <div className="max-w-full shrink-0">{action}</div>
     </div>
   );
 }

@@ -17,14 +17,14 @@ Build and deploy the current testing checkout with:
 
 ```text
 npm run build:worker
-npx wrangler deploy --env testing
+npm run deploy:testing
 ```
 
 Wrangler deployments preserve secrets. `--keep-vars` may be used when values
 managed outside this file must also remain attached:
 
 ```text
-npx wrangler deploy --env testing --keep-vars
+npm run deploy:testing
 ```
 
 ## One-time secret setup

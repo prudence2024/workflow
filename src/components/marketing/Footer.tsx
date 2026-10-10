@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { BrandLockup } from "@/components/brand/Logo";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { SOCIAL_URLS, type SocialNetwork } from "@/lib/socials";
+
+function SocialIcon({ network }: { network: SocialNetwork }) {
+  if (network === "x") return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M18.9 2H22l-6.77 7.74L23.2 22h-6.24l-4.88-6.38L6.5 22H3.4l7.24-8.28L2.8 2h6.4l4.4 5.82L18.9 2Zm-1.1 17.9h1.72L8.29 4H6.45L17.8 19.9Z" /></svg>;
+  if (network === "linkedin") return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M5.2 3.5A2.2 2.2 0 1 1 5.2 7.9a2.2 2.2 0 0 1 0-4.4ZM3.3 9.5h3.8V21H3.3V9.5Zm6.2 0h3.6v1.57h.05c.5-.95 1.73-1.95 3.56-1.95 3.8 0 4.5 2.5 4.5 5.75V21h-3.8v-5.44c0-1.3-.02-2.97-1.81-2.97-1.81 0-2.09 1.42-2.09 2.88V21H9.5V9.5Z" /></svg>;
+  return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2Zm0 2A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20h9a3.5 3.5 0 0 0 3.5-3.5v-9A3.5 3.5 0 0 0 16.5 4h-9Zm9.75 1.5a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" /></svg>;
+}
 
 const COLUMNS = [
   {
@@ -16,8 +22,8 @@ const COLUMNS = [
     title: "Solutions",
     links: [
       { href: "/use-cases", label: "Use cases" },
-      { href: "/product", label: "Operations" },
-      { href: "/features", label: "Teams" },
+      { href: "/operations", label: "Operations" },
+      { href: "/teams", label: "Teams" },
     ],
   },
   {
@@ -66,7 +72,13 @@ export function MarketingFooter() {
       <div className="border-t border-[var(--color-border)] px-6 py-5">
         <div className="mx-auto flex max-w-[1240px] flex-wrap items-center justify-between gap-4 text-[12.5px] text-[var(--color-muted)]">
           <p>© {new Date().getFullYear()} Workflow. All operations in flow.</p>
-          <ThemeToggle compact />
+          <nav aria-label="Social links" className="flex items-center gap-2">
+            {(Object.keys(SOCIAL_URLS) as SocialNetwork[]).map((network) => {
+              const href = SOCIAL_URLS[network];
+              if (!href) return null;
+              return <a key={network} href={href} target="_blank" rel="noreferrer" aria-label={`Workflow on ${network}`} className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-muted)] transition hover:-translate-y-0.5 hover:text-[var(--color-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]"><SocialIcon network={network} /></a>;
+            })}
+          </nav>
         </div>
       </div>
     </footer>
