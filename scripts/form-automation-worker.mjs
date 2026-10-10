@@ -20,7 +20,7 @@ if ((process.env.NEON_BRANCH ?? "").toLowerCase() !== "development") {
 
 const intervalMs = Math.max(5_000, Number(process.env.FORM_WORKER_POLL_MS ?? 15_000));
 const batchSize = Math.max(1, Math.min(25, Number(process.env.FORM_WORKER_BATCH_SIZE ?? 5)));
-const port = Number(process.env.FORM_WORKER_HEALTH_PORT ?? 8787);
+const port = Number(process.env.PORT ?? process.env.FORM_WORKER_HEALTH_PORT ?? 8787);
 const databaseUrl = process.env.WORKER_DATABASE_URL;
 if (!databaseUrl) throw new Error("FORM_WORKER_REQUIRES_RESTRICTED_DATABASE_URL");
 const state = { startedAt: new Date(), lastHeartbeatAt: null, lastCycleAt: null, lastError: null, cycles: 0 };
