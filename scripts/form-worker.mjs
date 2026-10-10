@@ -138,6 +138,12 @@ async function claimOne(client, campaignId) {
          join public.organizations o on o.id = r.org_id
         where c.status = 'running'
           ${campaignFilter}
+          and exists (
+            select 1 from public.campaign_audience_snapshots s
+             where s.snapshot_id = c.audience_snapshot_id
+               and s.campaign_id = r.campaign_id
+               and s.contact_id = r.contact_id
+          )
           and (r.status = 'queued'
             or (r.status = 'retrying' and (r.next_attempt_at is null or r.next_attempt_at <= now())))
         order by r.created_at
@@ -456,6 +462,12 @@ async function main() {
                  from public.campaign_records r join public.campaigns c on c.id = r.campaign_id
                  join public.organizations o on o.id = r.org_id
                 where r.id = $1::uuid and c.status = 'running'
+                  and exists (
+                    select 1 from public.campaign_audience_snapshots s
+                     where s.snapshot_id = c.audience_snapshot_id
+                       and s.campaign_id = r.campaign_id
+                       and s.contact_id = r.contact_id
+                  )
                   and r.status in ('queued','retrying') for update of r skip locked`,
               [onlyRecord],
             );
