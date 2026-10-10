@@ -108,12 +108,14 @@ const pool = new pg.Pool({
 });
 
 async function requireWorkerAccess(client) {
-  const cols = await client.query(
-    `select count(*)::int n from information_schema.columns where table_schema='public'
-      and ((table_name='campaign_records' and column_name in ('submission_evidence','next_attempt_at'))
-        or (table_name='organizations' and column_name='workspace_type'))`
-  );
-  if (cols.rows[0].n !== 3) throw new Error("migration 0008 is not applied on this branch");
+  const access = await client.query(`
+    select
+      has_column_privilege(current_user, 'public.campaign_records', 'submission_evidence', 'SELECT')
+        and has_column_privilege(current_user, 'public.campaign_records', 'next_attempt_at', 'SELECT')
+        and has_column_privilege(current_user, 'public.organizations', 'plan_key', 'SELECT')
+        and has_table_privilege(current_user, 'public.campaign_audience_snapshots', 'SELECT') as ready
+  `);
+  if (!access.rows[0]?.ready) throw new Error("worker database grants are incomplete");
   const pol = await client.query(
     `select count(*)::int n from pg_policies where schemaname='public' and policyname like 'worker_campaign%'`
   );
