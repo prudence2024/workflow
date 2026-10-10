@@ -15,6 +15,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { config } from "dotenv";
 import pg from "pg";
+import { safeBrowserError } from "./form-worker-diagnostics.mjs";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -37,16 +38,6 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL,
   max: 2,
 });
-
-function safeError(error) {
-  const value = error && typeof error === "object" ? error : {};
-  const raw = typeof value.message === "string" ? value.message : String(error);
-  return raw
-    .replace(/(?:bearer|token|authorization)\s*[:=]?\s*\S+/gi, "[redacted]")
-    .replace(/(?:sk|pk)_(?:test|live)_[A-Za-z0-9_-]+/g, "[redacted]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]")
-    .slice(0, 240);
-}
 
 function backoff(attempts) {
   return Math.min(15 * 60, 2 ** Math.max(0, attempts) * 5);
@@ -135,8 +126,7 @@ function runBrowserAnalysis(url) {
     const helper = new URL("./analyze-form.mjs", import.meta.url);
     execFile(process.execPath, [helper, url], { timeout: 100_000 }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(safeError(String(stderr || error.message || error).split("\
-")[0])));
+        reject(new Error(safeBrowserError(stderr || error)));
         return;
       }
       try {
@@ -226,7 +216,7 @@ async function processJob(client, job) {
       result: { provider: "google", state, fieldCount: fields.length, analysisMode: analyzed.analysisMode ?? "single-page", warnings: analyzed.warnings ?? [], navigation: analyzed.navigation ?? null },
     });
   } catch (error) {
-    const message = safeError(error);
+    const message = safeBrowserError(error);
     const permanent = /challenge|captcha|otp|one-time|sign.?in|ambiguous|unsupported|not allowed|credentials/i.test(message);
     const exhausted = Number(job.attempts) >= Number(job.max_attempts);
     await finish(client, job, {
@@ -261,6 +251,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(safeError(error));
+  console.error(safeBrowserError(error));
   process.exitCode = 1;
 });
