@@ -10,3 +10,8 @@
 
 # Netlify's native Next.js runtime handles SSR, RSC, API routes, and Server
 # Actions. No Cloudflare/OpenNext build command is used for this site.
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
