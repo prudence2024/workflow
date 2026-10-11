@@ -20,7 +20,7 @@ describe("final onboarding UX boundaries", () => {
   });
 
   it("does not detach the workspace switcher form before its action settles", () => {
-    const switcher = readFileSync("src/components/app/OrgSwitcher.tsx", "utf8");
+    const switcher = readFileSync("src/components/app/OrgSwitcher.tsx", "utf8").replace(/\r\n/g, "\n");
     expect(switcher).toContain("await switchOrgAction(fd);");
     expect(switcher).toContain("setOpen(false);\n                  router.refresh();");
     const formBody = switcher.slice(switcher.indexOf("action={async"), switcher.indexOf("</form>", switcher.indexOf("action={async")));

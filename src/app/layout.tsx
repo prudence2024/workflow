@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -36,14 +36,28 @@ export const metadata: Metadata = {
   // baked-in white page background around its dark tile, which renders as a
   // white box in browser tabs). No logo redraw: same approved symbol.
   icons: {
-    icon: "/brand/icon-light.png",
-    apple: "/brand/icon-light.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/apple-icon.png",
   },
   openGraph: {
     title: "Workflow — All your operations. In flow.",
     description: "Connect · Automate · Move Forward",
-    images: ["/brand/workflow-logo.png"],
+    type: "website",
+    images: [{ url: "/branding/workflow-logo-light.png", width: 1200, height: 630, alt: "Workflow — All your operations. In flow." }],
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "Workflow — All your operations. In flow.",
+    description: "Connect · Automate · Move Forward",
+    images: ["/branding/workflow-logo-light.png"],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#071938",
 };
 
 /**
