@@ -10,6 +10,10 @@ const config: CapacitorConfig = {
     url:
       process.env.CAPACITOR_APP_ORIGIN ??
       "https://workflow-application.netlify.app/auth/complete?next=%2Fdashboard",
+      // Keep the deployed Workflow application inside the Capacitor WebView.
+      // Capacitor still opens genuinely external origins (Clerk providers,
+      // social links, and payment providers) through the system browser.
+      allowNavigation: ["workflow-application.netlify.app"],
     cleartext: false,
     androidScheme: "https",
   },

@@ -20,7 +20,7 @@ type Step = "workspace" | "details" | "plan" | "billing";
 
 function OnboardingRecovery({ correlationId }: { correlationId: string }) {
   return (
-    <AuthShell eyebrow="Workspace setup">
+    <AuthShell eyebrow="Workspace setup" logoHref="/onboarding">
       <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-md)] sm:p-8">
         <Alert tone="danger" title="We couldn't resume setup">Your saved setup is still safe. Try again to continue from the last available step.</Alert>
         <Link href="/onboarding" className="mt-5 block rounded-[var(--radius-md)] bg-[var(--color-brand)] px-4 py-3 text-center text-sm font-semibold text-white">Try again</Link>
@@ -95,7 +95,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const planComplete = Boolean(state.plan);
 
   return (
-    <AuthShell eyebrow="Workspace setup" contentClassName={step === "plan" ? "max-w-[1180px]" : undefined}>
+    <AuthShell eyebrow="Workspace setup" logoHref="/onboarding" contentClassName={step === "plan" ? "max-w-[1180px]" : undefined}>
       <OnboardingDraftCleanup step={draft === "saved" && step === "details" ? "workspace" : draft === "saved" && step === "plan" ? "details" : undefined} />
       <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-md)] sm:p-8">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">Get started</p>

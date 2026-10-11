@@ -63,6 +63,7 @@ describe("PWA and Android preparation", () => {
   it("points the native wrapper at Netlify rather than Cloudflare", () => {
     const capacitor = readFileSync(resolve(root, "capacitor.config.ts"), "utf8");
     expect(capacitor).toContain("https://workflow-application.netlify.app");
+    expect(capacitor).toContain('allowNavigation: ["workflow-application.netlify.app"]');
     expect(capacitor).not.toContain("workflow-testing.okwuborprudence.workers.dev");
   });
 });

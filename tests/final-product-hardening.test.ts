@@ -62,4 +62,16 @@ describe("final product hardening contracts", () => {
     expect(actions).toContain("deleteNoteAction");
     expect(actions).toContain("eq(notes.orgId, org.orgId)");
   });
+
+  it("uses the supplied horizontal asset for social metadata and the complete app tile for install UI", () => {
+    const layout = read("src/app/layout.tsx");
+    const pwa = read("src/components/pwa/PwaRuntime.tsx");
+    const css = read("src/app/globals.css");
+    expect(layout).toContain("/branding/workflow-social-preview.png");
+    expect(layout).toContain("alternates: { canonical: \"/\" }");
+    expect(layout).not.toContain("/branding/workflow-logo-light.png");
+    expect(pwa).toContain("/icons/workflow-app-192.png");
+    expect(css).toContain("pwa-install-enter");
+    expect(css).toContain("prefers-reduced-motion");
+  });
 });

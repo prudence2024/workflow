@@ -74,10 +74,10 @@ export function PwaRuntime() {
   return (
     <aside
       aria-label="Install Workflow"
-      className="fixed inset-x-4 bottom-4 z-[60] mx-auto flex max-w-lg items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)]"
+      className="pwa-install-prompt fixed inset-x-4 bottom-4 z-[60] mx-auto flex max-w-lg items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)]"
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Image src="/icons/workflow-192.png" alt="" width={40} height={40} className="shrink-0 rounded-[10px]" />
+        <Image src="/icons/workflow-app-192.png" alt="" width={40} height={40} className="shrink-0 rounded-[10px]" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[var(--color-ink)]">Get Workflow</p>
           <p className="text-xs text-[var(--color-muted)]">

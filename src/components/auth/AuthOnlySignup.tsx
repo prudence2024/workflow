@@ -154,7 +154,7 @@ export function AuthOnlySignup({ nextPath }: { nextPath: string }) {
           <input id="signup-email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" required autoComplete="email" placeholder="you@organization.org" className="w-full rounded-[var(--radius-md)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-3 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-brand)]" />
           <label className="flex items-start gap-2 text-xs text-[var(--color-muted)]">
             <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} required className="mt-0.5" />
-            <span>I agree to the Workflow <a className="text-[var(--color-brand)] underline" href="/terms" target="_blank" rel="noreferrer">Terms</a> and <a className="text-[var(--color-brand)] underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.</span>
+            <span>I agree to the Workflow <a className="text-[var(--color-brand)] underline" href="/terms">Terms</a> and <a className="text-[var(--color-brand)] underline" href="/privacy">Privacy Policy</a>.</span>
           </label>
           <button type="submit" disabled={busy || !isLoaded} className="w-full rounded-[var(--radius-md)] bg-[var(--color-brand)] px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">{busy ? "Continuing…" : "Continue"}</button>
         </form>

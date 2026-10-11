@@ -23,5 +23,5 @@ export default async function AuthCompletePage({
 }) {
   if (authMode() !== "clerk") redirect("/login");
   const { next } = await searchParams;
-  return <AuthShell eyebrow="Secure session"><SessionCompletion next={safeInternalNext(next)} /></AuthShell>;
+  return <AuthShell eyebrow="Secure session" logoHref="/auth/complete"><SessionCompletion next={safeInternalNext(next)} /></AuthShell>;
 }

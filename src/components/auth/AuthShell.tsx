@@ -3,14 +3,14 @@ import { BrandLockup } from "@/components/brand/Logo";
 import { FlowCheck } from "@/components/ui/FlowIcon";
 import { cn } from "@/lib/utils";
 
-export function AuthShell({ children, eyebrow = "Workflow setup", contentClassName }: { children: ReactNode; eyebrow?: string; contentClassName?: string }) {
+export function AuthShell({ children, eyebrow = "Workflow setup", contentClassName, logoHref = "/login" }: { children: ReactNode; eyebrow?: string; contentClassName?: string; logoHref?: string }) {
   return (
     <div className="auth-shell grid min-h-screen bg-[var(--color-canvas)] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <aside className="auth-brand-panel relative hidden overflow-hidden px-10 py-10 lg:flex lg:flex-col lg:justify-start xl:px-16">
         <div className="auth-brand-glow absolute inset-0" />
         <div className="relative">
-          <div className="auth-logo-light"><BrandLockup href="/" size={30} /></div>
-          <div className="auth-logo-dark"><BrandLockup href="/" size={30} tone="dark" /></div>
+          <div className="auth-logo-light"><BrandLockup href={logoHref} size={30} /></div>
+          <div className="auth-logo-dark"><BrandLockup href={logoHref} size={30} tone="dark" /></div>
           <p className="auth-brand-text mt-12 max-w-md font-display text-[clamp(2rem,4vw,3.8rem)] font-semibold leading-[1.04]">
             Put every operation in flow.
           </p>
@@ -29,7 +29,7 @@ export function AuthShell({ children, eyebrow = "Workflow setup", contentClassNa
       </aside>
       <main className="auth-main-panel flex min-w-0 flex-col">
         <header className="flex items-center justify-between px-6 py-6 sm:px-10 lg:hidden">
-          <BrandLockup href="/" size={28} />
+          <BrandLockup href={logoHref} size={28} />
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">{eyebrow}</span>
         </header>
         <div className="flex flex-1 items-center justify-center px-5 py-8 sm:px-10 lg:px-16 lg:py-12">

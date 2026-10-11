@@ -32,7 +32,7 @@ export default async function ProfileCompletionPage({
   if (user.profileComplete) redirect(next);
 
   return (
-    <AuthShell eyebrow="Profile">
+    <AuthShell eyebrow="Profile" logoHref="/profile-completion">
       <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-md)] sm:p-8">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-brand)]">One last detail</p>
         <h1 className="mt-2 font-display text-[24px] font-semibold text-[var(--color-ink)]">Complete your profile</h1>
