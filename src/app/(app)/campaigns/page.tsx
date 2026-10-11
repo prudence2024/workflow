@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentOrg, getCurrentUser, getUserOrganizations } from "@/lib/auth";
 import { listCampaigns } from "@/lib/data";
-import { Card, EmptyState } from "@/components/ui/Surfaces";
+import { Alert, Card, EmptyState } from "@/components/ui/Surfaces";
 import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
 import { ProgressBar, TD, TH, THead, TR, Table } from "@/components/ui/Data";
@@ -77,6 +77,9 @@ export default async function CampaignsPage() {
           </Table>
         )}
       </Card>
+      <Alert title="Campaign statuses">
+        Draft means the campaign is not ready to run. Archived campaigns remain available for history but must be restored before queueing. Queued and running campaigns are processing work; Successful and Failed describe the completed outcome.
+      </Alert>
     </div>
   );
 }

@@ -19,6 +19,7 @@ export type PlanCapability =
   | "ai_data_quality"
   | "ai_automation_builder"
   | "ai_document_intelligence"
+  | "custom_fields"
   | "api_access";
 
 export type PlanLimits = {
@@ -49,6 +50,7 @@ const PRO_CAPABILITIES: readonly PlanCapability[] = [
   "ai_failure_analysis",
   "ai_campaign_builder",
   "ai_operations_chat",
+  "custom_fields",
 ];
 const PLUS_CAPABILITIES: readonly PlanCapability[] = [
   ...PRO_CAPABILITIES,
@@ -170,6 +172,7 @@ export function capabilityMessage(capability: PlanCapability): string {
     ai_data_quality: "AI data-quality assistance is available on Plus.",
     ai_automation_builder: "AI automation building is reserved for Plus.",
     ai_document_intelligence: "AI document intelligence is reserved for Plus.",
+    custom_fields: "Custom fields are available on Pro and Plus.",
     api_access: "API access is available on Plus.",
   };
   return labels[capability];

@@ -11,7 +11,7 @@ import { inWorkspace } from "@/lib/data";
 import { normalizeEmail, normalizePhone, slugify } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 import { incrementUsage } from "@/lib/usage";
-import { assertPlanLimit } from "@/lib/planLimits";
+import { assertPlanCapability, assertPlanLimit } from "@/lib/planLimits";
 
 async function requireOrgContext() {
   const user = await getCurrentUser();
@@ -148,10 +148,48 @@ export async function addNoteAction(formData: FormData) {
   const body = String(formData.get("body") ?? "").trim();
   if (!body) redirect(`/contacts/${contactId}`);
 
-  await inWorkspace({ user, org }, async (tx) => {
+  const created = await inWorkspace({ user, org }, async (tx) => {
+    const [contact] = await tx
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(and(eq(contacts.id, contactId), eq(contacts.orgId, org.orgId)))
+      .limit(1);
+    if (!contact) return false;
     await tx.insert(notes).values({ orgId: org.orgId, contactId, authorUserId: user.id, body });
+    return true;
   });
+  if (!created) redirect(`/contacts/${contactId}`);
   await logActivity({ orgId: org.orgId, contactId, type: "note_added", message: "Note added" });
+  revalidatePath(`/contacts/${contactId}`);
+}
+
+export async function updateNoteAction(formData: FormData) {
+  const { user, org } = await requireOrgContext();
+  const contactId = String(formData.get("contactId"));
+  const noteId = String(formData.get("noteId"));
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body || body.length > 4000) redirect(`/contacts/${contactId}?error=${encodeURIComponent("Note text must be between 1 and 4000 characters.")}`);
+
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx
+      .update(notes)
+      .set({ body })
+      .where(and(eq(notes.id, noteId), eq(notes.contactId, contactId), eq(notes.orgId, org.orgId)));
+  });
+  await logActivity({ orgId: org.orgId, contactId, type: "note_updated", message: "Note updated" });
+  revalidatePath(`/contacts/${contactId}`);
+}
+
+export async function deleteNoteAction(formData: FormData) {
+  const { user, org } = await requireOrgContext();
+  const contactId = String(formData.get("contactId"));
+  const noteId = String(formData.get("noteId"));
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx
+      .delete(notes)
+      .where(and(eq(notes.id, noteId), eq(notes.contactId, contactId), eq(notes.orgId, org.orgId)));
+  });
+  await logActivity({ orgId: org.orgId, contactId, type: "note_deleted", message: "Note deleted" });
   revalidatePath(`/contacts/${contactId}`);
 }
 
@@ -226,6 +264,7 @@ export async function createCustomFieldAction(formData: FormData) {
     .filter(Boolean);
 
   await inWorkspace({ user, org }, async (tx) => {
+    await assertPlanCapability(tx, org.orgId, "custom_fields");
     await tx
       .insert(customFieldDefinitions)
       .values({ orgId: org.orgId, key, label, fieldType, options })

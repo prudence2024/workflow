@@ -12,6 +12,7 @@ import {
   runCampaignAction,
   saveFieldMappingAction,
   sendConfirmationEmailsAction,
+  unarchiveCampaignAction,
 } from "@/app/(app)/campaigns/actions";
 import { Card, CardBody, CardHeader, Alert, EmptyState } from "@/components/ui/Surfaces";
 import { Button, LinkButton } from "@/components/ui/Button";
@@ -22,6 +23,7 @@ import { formatDateTime } from "@/lib/utils";
 import { analysisStatusMessage } from "@/lib/formAnalysisJobs";
 import type { FormField } from "@/db/schema";
 import { CampaignStatusRefresh } from "@/components/runtime/CampaignStatusRefresh";
+import { ConfirmSubmit } from "@/components/ui/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,16 @@ const STATUS_COLORS: Record<string, string> = {
   queued: "#94a3b8",
   skipped: "#94a3b8",
   cancelled: "#94a3b8",
+};
+
+const STATUS_COPY: Record<string, string> = {
+  draft: "Created but not ready to run. It does not send anything.",
+  ready: "Form mapping is saved and the campaign can be queued when it has contacts.",
+  archived: "Removed from the active list but preserved for history. Restore it before running.",
+  queued: "Submitted for processing.",
+  running: "Currently processing.",
+  paused: "Temporarily stopped. Resume or cancel when ready.",
+  completed: "Completed successfully.",
 };
 
 export default async function CampaignDetailPage({
@@ -82,7 +94,7 @@ export default async function CampaignDetailPage({
   const hasFailed = (stats.failed ?? 0) > 0;
   const activeRecordCount = (stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0);
   const activeRun = campaign.status === "running" || activeRecordCount > 0;
-  const canRun = (stats.queued ?? 0) + (stats.retrying ?? 0) > 0 && !activeRun;
+  const canRun = campaign.status !== "archived" && (stats.queued ?? 0) + (stats.retrying ?? 0) > 0 && !activeRun;
   const queueButtonLabel = activeRun
     ? campaign.status === "running" ? "Running…" : "Queued…"
     : campaign.status === "completed" ? "Run again" : "Queue run";
@@ -136,16 +148,24 @@ export default async function CampaignDetailPage({
               {queueButtonLabel}
             </Button>
           </form>
-          <form action={archiveCampaignAction}>
-            <input type="hidden" name="campaignId" value={id} />
-            <Button type="submit" variant="ghost" size="sm">
-              Archive
-            </Button>
-          </form>
+          {campaign.status === "archived" ? (
+            <form action={unarchiveCampaignAction}>
+              <input type="hidden" name="campaignId" value={id} />
+              <ConfirmSubmit message="Restore this campaign to draft? It will remain paused until you queue it." className="inline-flex h-8 items-center justify-center rounded-[var(--radius-sm)] px-3 text-[13px] font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand-soft)]">Restore</ConfirmSubmit>
+            </form>
+          ) : (
+            <form action={archiveCampaignAction}>
+              <input type="hidden" name="campaignId" value={id} />
+              <ConfirmSubmit message="Archive this campaign? Its history will be preserved and it will not be runnable until restored." className="inline-flex h-8 items-center justify-center rounded-[var(--radius-sm)] px-3 text-[13px] font-medium text-[var(--color-muted)] hover:bg-[var(--color-canvas)]">Archive</ConfirmSubmit>
+            </form>
+          )}
         </div>
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
+      <Alert tone={campaign.status === "archived" ? "warning" : "info"} title={`${campaign.status.charAt(0).toUpperCase()}${campaign.status.slice(1)} status`}>
+        {STATUS_COPY[campaign.status] ?? "Review this campaign before taking the next action."}
+      </Alert>
       {analysis === "queued" && <Alert tone="info" title="Analysis queued">A Node browser worker will inspect the rendered form shortly.</Alert>}
       {campaign.formAnalysisStatus !== "idle" && campaign.formAnalysisStatus !== "ready" && campaign.formAnalysisStatus !== "queued" && (
         <Alert tone={campaign.formAnalysisStatus === "needs_attention" ? "warning" : "danger"} title={campaign.formAnalysisStatus === "needs_attention" ? "Needs attention" : "Analysis failed"}>

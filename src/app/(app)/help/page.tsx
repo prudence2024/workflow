@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";
 import { LinkButton } from "@/components/ui/Button";
+import { FirstRunGuide } from "@/components/app/FirstRunGuide";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function HelpPage() {
     <Card><CardHeader title="Workflow at a glance" description="You can return to this guide any time from Help and guide." /><CardBody className="grid gap-3 sm:grid-cols-2">
       {GUIDE.map(([title, description, href], index) => <Link key={title} href={href} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-4 transition hover:border-[var(--color-brand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]"><span className="font-mono-data text-[11px] text-[var(--color-brand)]">0{index + 1}</span><p className="mt-2 font-medium text-[var(--color-ink)]">{title}</p><p className="mt-1 text-[12.5px] leading-relaxed text-[var(--color-muted)]">{description}</p></Link>)}
     </CardBody></Card>
+    <FirstRunGuide workspaceId={org.orgId} forceOpen showRestart />
     <Card><CardHeader title="Recommended first action" /><CardBody className="flex flex-wrap items-center justify-between gap-4"><p className="max-w-xl text-[13px] text-[var(--color-muted)]">Import a small list of contacts, review the mapped fields, then create a campaign and send a controlled test.</p><LinkButton href="/imports/new" size="sm">Import contacts</LinkButton></CardBody></Card>
   </div>;
 }

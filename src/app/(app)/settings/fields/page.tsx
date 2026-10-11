@@ -6,6 +6,8 @@ import { Card, CardBody, CardHeader, Alert, EmptyState } from "@/components/ui/S
 import { Button } from "@/components/ui/Button";
 import { FieldGroup, HelpText, Input, Label, Select } from "@/components/ui/Field";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
+import { canonicalPlanKey, hasCapability, PLANS } from "@/lib/plans";
+import { LinkButton } from "@/components/ui/Button";
 
 // Authenticated page: reads session cookies and tenant context at request time.
 export const dynamic = "force-dynamic";
@@ -22,6 +24,9 @@ export default async function CustomFieldsPage({
   const { error } = await searchParams;
 
   const definitions = await listCustomFields({ user, org });
+  const planKey = canonicalPlanKey(org.planKey);
+  const plan = PLANS[planKey];
+  const canCreate = hasCapability(planKey, "custom_fields");
 
   return (
     <div className="space-y-5">
@@ -39,28 +44,37 @@ export default async function CustomFieldsPage({
           description="Define organization-specific fields without any database schema changes — e.g. Student ID, Church, T-Shirt Size."
         />
         <CardBody className="space-y-6">
-          <form action={createCustomFieldAction} className="grid gap-3 sm:grid-cols-[1.2fr_1fr_1.2fr_auto] sm:items-end">
-            <FieldGroup>
-              <Label htmlFor="label">Field label</Label>
-              <Input id="label" name="label" placeholder="Student ID" required />
-            </FieldGroup>
-            <FieldGroup>
-              <Label htmlFor="fieldType">Type</Label>
-              <Select id="fieldType" name="fieldType" defaultValue="text">
-                <option value="text">Text</option>
-                <option value="number">Number</option>
-                <option value="date">Date</option>
-                <option value="select">Select</option>
-                <option value="boolean">Yes / No</option>
-              </Select>
-            </FieldGroup>
-            <FieldGroup>
-              <Label htmlFor="options">Options (for select)</Label>
-              <Input id="options" name="options" placeholder="Small, Medium, Large" />
-            </FieldGroup>
-            <Button type="submit">Add field</Button>
-          </form>
-          <HelpText>Field keys are generated automatically from the label and used when mapping imports.</HelpText>
+          {canCreate ? (
+            <>
+              <form action={createCustomFieldAction} className="grid gap-3 sm:grid-cols-[1.2fr_1fr_1.2fr_auto] sm:items-end">
+                <FieldGroup>
+                  <Label htmlFor="label">Field label</Label>
+                  <Input id="label" name="label" placeholder="Student ID" required />
+                </FieldGroup>
+                <FieldGroup>
+                  <Label htmlFor="fieldType">Type</Label>
+                  <Select id="fieldType" name="fieldType" defaultValue="text">
+                    <option value="text">Text</option>
+                    <option value="number">Number</option>
+                    <option value="date">Date</option>
+                    <option value="select">Select</option>
+                    <option value="boolean">Yes / No</option>
+                  </Select>
+                </FieldGroup>
+                <FieldGroup>
+                  <Label htmlFor="options">Options (for select)</Label>
+                  <Input id="options" name="options" placeholder="Small, Medium, Large" />
+                </FieldGroup>
+                <Button type="submit">Add field</Button>
+              </form>
+              <HelpText>Field keys are generated automatically from the label and used when mapping imports.</HelpText>
+            </>
+          ) : (
+            <Alert tone="warning" title="Custom fields require Pro">
+              Your {plan.name} plan can view imported values, but creating workspace custom fields requires Pro or Plus.
+              <LinkButton href="/pricing" size="sm" variant="outline" className="ml-3">View pricing</LinkButton>
+            </Alert>
+          )}
 
           {definitions.length === 0 ? (
             <EmptyState title="No custom fields yet" description="Add your first custom field to start capturing organization-specific data." />

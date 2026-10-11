@@ -299,7 +299,9 @@ export async function runCampaignAction(formData: FormData) {
         where id = ${campaignId}::uuid and org_id = ${org.orgId}::uuid limit 1
       `);
       const campaign = campaignRows.rows[0];
-      if (!campaign || campaign.form_analysis_status !== "ready") throw new Error("Analyze the authorized form successfully before running this campaign.");
+      if (!campaign) throw new Error("Campaign not found in this workspace.");
+      if (campaign.status === "archived") throw new Error("Archived campaigns must be restored before they can run.");
+      if (campaign.form_analysis_status !== "ready") throw new Error("Analyze the authorized form successfully before running this campaign.");
       const activeRecords = await tx.execute<{ n: number }>(sql`
         select count(*)::int as n from public.campaign_records
          where campaign_id = ${campaignId}::uuid
@@ -430,6 +432,21 @@ export async function archiveCampaignAction(formData: FormData) {
   });
   revalidatePath("/campaigns");
   redirect("/campaigns");
+}
+
+export async function unarchiveCampaignAction(formData: FormData) {
+  const { user, org } = await requireOrgContext();
+  const campaignId = String(formData.get("campaignId"));
+  await inWorkspace({ user, org }, async (tx) => {
+    await tx
+      .update(campaigns)
+      .set({ status: "draft", updatedAt: new Date() })
+      .where(and(eq(campaigns.id, campaignId), eq(campaigns.orgId, org.orgId), eq(campaigns.status, "archived")));
+  });
+  await logActivity({ orgId: org.orgId, campaignId, type: "campaign_unarchived", message: "Campaign restored to draft" });
+  revalidatePath("/campaigns");
+  revalidatePath(`/campaigns/${campaignId}`);
+  redirect(`/campaigns/${campaignId}`);
 }
 
 export async function retryFailedAction(formData: FormData) {

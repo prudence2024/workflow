@@ -6,8 +6,10 @@ import {
   addNoteAction,
   addTagAction,
   archiveContactAction,
+  deleteNoteAction,
   removeTagAction,
   restoreContactAction,
+  updateNoteAction,
   updateContactAction,
 } from "@/app/(app)/contacts/actions";
 import { Card, CardBody, CardHeader, Alert } from "@/components/ui/Surfaces";
@@ -16,6 +18,7 @@ import { FieldGroup, Input, Label, Textarea } from "@/components/ui/Field";
 import { StatusPill } from "@/components/ui/Status";
 import { Avatar } from "@/components/ui/Data";
 import { formatDateTime, timeAgo } from "@/lib/utils";
+import { ConfirmSubmit } from "@/components/ui/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -238,8 +241,18 @@ export default async function ContactDetailPage({
               <div className="mt-4 space-y-3">
                 {contactNotes.map((n) => (
                   <div key={n.id} className="rounded-[var(--radius-sm)] bg-[var(--color-canvas)] p-3">
-                    <p className="text-[13px] text-[var(--color-ink)]">{n.body}</p>
-                    <p className="mt-1 text-[11px] text-[var(--color-muted)]">{timeAgo(n.createdAt)}</p>
+                    <form action={updateNoteAction} className="space-y-2">
+                      <input type="hidden" name="contactId" value={contact.id} />
+                      <input type="hidden" name="noteId" value={n.id} />
+                      <Textarea name="body" defaultValue={n.body} rows={3} aria-label="Edit note" />
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] text-[var(--color-muted)]">{n.author ? `${n.author} · ` : ""}{timeAgo(n.createdAt)}</p>
+                        <div className="flex gap-2">
+                          <ConfirmSubmit message="Delete this note? This cannot be undone." formAction={deleteNoteAction} className="rounded-[var(--radius-sm)] px-2 py-1 text-[11px] font-medium text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]">Delete</ConfirmSubmit>
+                          <Button type="submit" size="sm" variant="outline">Save</Button>
+                        </div>
+                      </div>
+                    </form>
                   </div>
                 ))}
               </div>
