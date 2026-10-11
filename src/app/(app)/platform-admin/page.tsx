@@ -7,7 +7,7 @@ import { claimPlatformAdmin } from "@/lib/authorization";
 // resolved from the database allowlist (app.is_platform_admin_user) — never from
 // a request value. Every ordinary customer page reads through @/lib/data.
 import { db } from "@/db";
-import { campaignRecords, campaigns, contacts, messages, organizationMembers, organizations, users } from "@/db/schema";
+import { campaignRecords, campaigns, contacts, messages, organizationMembers, organizations, productSurveys, users } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";
 import { Stat, TD, TH, THead, TR, Table } from "@/components/ui/Data";
 import { StatusPill } from "@/components/ui/Status";
@@ -55,6 +55,35 @@ export default async function PlatformAdminPage() {
     .orderBy(desc(organizations.createdAt))
     .limit(50);
 
+  let surveyRows: Array<{
+    id: string;
+    orgId: string;
+    status: string;
+    featureUsed: string | null;
+    satisfaction: number | null;
+    requestedFeature: string | null;
+    createdAt: Date;
+  }> = [];
+  try {
+    surveyRows = await db
+      .select({
+        id: productSurveys.id,
+        orgId: productSurveys.orgId,
+        status: productSurveys.status,
+        featureUsed: productSurveys.featureUsed,
+        satisfaction: productSurveys.satisfaction,
+        requestedFeature: productSurveys.requestedFeature,
+        createdAt: productSurveys.createdAt,
+      })
+      .from(productSurveys)
+      .orderBy(desc(productSurveys.createdAt))
+      .limit(25);
+  } catch {
+    // Keep the operator console available while the additive survey migration
+    // is being rolled through environments.
+    surveyRows = [];
+  }
+
   return (
     <div className="space-y-5">
       <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] px-5 py-3">
@@ -100,6 +129,18 @@ export default async function PlatformAdminPage() {
               ))}
             </tbody>
           </Table>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Product feedback" description="Tenant-scoped weekly survey responses. No provider secrets or raw identity tokens are shown." />
+        <CardBody className="p-0">
+          {surveyRows.length === 0 ? <p className="p-5 text-[13px] text-[var(--color-muted)]">No survey responses yet.</p> : (
+            <Table>
+              <THead><TH>Workspace</TH><TH>Status</TH><TH>Feature</TH><TH>Satisfaction</TH><TH>Requested</TH><TH>When</TH></THead>
+              <tbody>{surveyRows.map((survey) => <TR key={survey.id}><TD className="font-mono-data text-[11px]">{survey.orgId.slice(0, 8)}…</TD><TD><StatusPill status={survey.status} /></TD><TD>{survey.featureUsed ?? "—"}</TD><TD>{survey.satisfaction ? `${survey.satisfaction}/5` : "—"}</TD><TD className="max-w-[260px] truncate">{survey.requestedFeature ?? "—"}</TD><TD className="whitespace-nowrap text-[12px] text-[var(--color-muted)]">{formatDate(survey.createdAt)}</TD></TR>)}</tbody>
+            </Table>
+          )}
         </CardBody>
       </Card>
     </div>

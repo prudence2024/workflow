@@ -11,16 +11,21 @@ import { LinkButton } from "@/components/ui/Button";
 import { formatDateTime, pct, timeAgo } from "@/lib/utils";
 import { canonicalPlanKey, PLANS } from "@/lib/plans";
 import { FirstRunGuide } from "@/components/app/FirstRunGuide";
+import { WeeklySurvey } from "./WeeklySurvey";
+import { getWeeklySurveyState } from "@/lib/surveys";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | undefined>> }) {
+  const params = searchParams ? await searchParams : {};
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const orgs = await getUserOrganizations(user);
   if (orgs.length === 0) redirect("/onboarding");
   const org = await getCurrentOrg(user);
   if (!org) redirect("/onboarding");
+
+  const survey = await getWeeklySurveyState({ user, org });
 
   const summary = await getDashboardSummary({ user, org });
   const contactCount = { count: summary.contacts };
@@ -65,6 +70,8 @@ export default async function DashboardPage() {
       {contactCount.count === 0 && currentCampaigns.length === 0 && recentImports.length === 0 && recentActivity.length === 0 && (
         <FirstRunGuide workspaceId={org.orgId} />
       )}
+      {survey.due && <WeeklySurvey message={params.survey === "error" ? "We couldn't save that feedback. Please try again." : undefined} />}
+      {params.survey === "thanks" && <p role="status" className="rounded-[var(--radius-sm)] bg-[var(--color-success-soft)] px-4 py-3 text-[13px] text-[var(--color-success)]">Thanks for helping improve Workflow.</p>}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Total contacts" value={contactCount.count.toLocaleString()} hint={`Limit ${plan.limits.contacts.toLocaleString()}`} />

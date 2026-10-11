@@ -573,6 +573,32 @@ export const auditLogs = pgTable("audit_logs", {
   index("audit_logs_action_created_idx").on(table.action, table.createdAt),
 ]);
 
+/** One tenant-scoped product feedback interaction per user and survey day. */
+export const productSurveys = pgTable("product_surveys", {
+  id: id(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  periodStart: date("period_start").notNull(),
+  status: text("status").notNull().default("submitted"),
+  featureUsed: text("feature_used"),
+  challenge: text("challenge"),
+  bugReport: text("bug_report"),
+  requestedFeature: text("requested_feature"),
+  satisfaction: integer("satisfaction"),
+  wouldRecommend: boolean("would_recommend"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("product_survey_org_user_period_unique").on(table.orgId, table.userId, table.periodStart),
+  index("product_survey_org_created_idx").on(table.orgId, table.createdAt),
+  check("product_survey_status_check", sql`${table.status} in ('submitted','dismissed','remind')`),
+  check("product_survey_satisfaction_check", sql`${table.satisfaction} is null or ${table.satisfaction} between 1 and 5`),
+]);
+
 export const subscriptions = pgTable("subscriptions", {
   id: id(),
   orgId: uuid("org_id")
