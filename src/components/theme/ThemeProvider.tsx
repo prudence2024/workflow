@@ -23,6 +23,7 @@ function applyTheme(mode: ThemeMode) {
   const resolved = resolveTheme(mode);
   document.documentElement.dataset.theme = resolved;
   document.documentElement.dataset.themeMode = mode;
+  document.documentElement.style.colorScheme = resolved;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -49,6 +50,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const resolved = resolveTheme("system");
       document.documentElement.dataset.theme = resolved;
       document.documentElement.dataset.themeMode = "system";
+      document.documentElement.style.colorScheme = resolved;
       setResolvedTheme(resolved);
     };
     update();

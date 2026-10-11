@@ -10,11 +10,13 @@ const GUIDE = [
   ["Dashboard", "See activity, current campaigns, attention items, and plan usage.", "/dashboard"],
   ["Records", "Import contacts, maintain details, tags, notes, and history.", "/contacts"],
   ["Forms", "Analyze authorized forms, map fields, and track submissions.", "/form-operations"],
+  ["Automations", "Run durable, reviewable workflow jobs with evidence.", "/form-operations"],
   ["Campaigns", "Move a cohort through validation, queueing, and reporting.", "/campaigns"],
   ["Communications", "Queue consent-aware email and SMS through the durable outbox.", "/communications"],
   ["Downloads", "Install the PWA and access workspace files.", "/downloads"],
   ["Reports", "Review truthful operational outcomes and follow-up.", "/reports"],
   ["Billing", "Review plan, usage, verified payments, and receipts.", "/settings/usage"],
+  ["Settings", "Manage workspace details, fields, members, and account access.", "/settings/organization"],
 ] as const;
 
 export default async function HelpPage() {

@@ -75,7 +75,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(() => { try { const m = localStorage.getItem('workflow-theme') || 'system'; const d = m === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : m; document.documentElement.dataset.theme = d; document.documentElement.dataset.themeMode = m; } catch {} })()`,
+            __html: `(() => { try { const m = localStorage.getItem('workflow-theme') || 'system'; const d = m === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : m; const root = document.documentElement; root.dataset.theme = d; root.dataset.themeMode = m; root.style.colorScheme = d; } catch {} })()`,
           }}
         />
       </head>
