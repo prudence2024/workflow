@@ -19,10 +19,10 @@ boundary.
 ## Android wrapper
 
 Capacitor is configured as a thin remote-origin wrapper. It must point to the
-Netlify origin and never to the Cloudflare Worker:
+Netlify session resolver and never to the Cloudflare Worker:
 
 ```text
-https://workflow-application.netlify.app
+https://workflow-application.netlify.app/auth/complete?next=%2Fdashboard
 ```
 
 The wrapper does not replace Clerk or implement a second auth system. Clerk

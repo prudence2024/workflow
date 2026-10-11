@@ -7,7 +7,9 @@ const config: CapacitorConfig = {
   server: {
     // The APK is a thin wrapper around the Netlify app. Override this for a
     // preview build without changing the source or pointing at Cloudflare.
-    url: process.env.CAPACITOR_APP_ORIGIN ?? "https://workflow-application.netlify.app",
+    url:
+      process.env.CAPACITOR_APP_ORIGIN ??
+      "https://workflow-application.netlify.app/auth/complete?next=%2Fdashboard",
     cleartext: false,
     androidScheme: "https",
   },
