@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 import { desc, sql } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { claimPlatformAdmin } from "@/lib/authorization";
+import { auditPlatformAdminAttempt, requireWorkflowAdminOwner } from "@/lib/authorization";
 // Intentionally privileged: this operator console is the ONE customer-app route
-// that reads across tenants. Access is gated by isPlatformAdmin, which is
-// resolved from the database allowlist (app.is_platform_admin_user) — never from
-// a request value. Every ordinary customer page reads through @/lib/data.
+// that reads across tenants. Access is gated by the exact server-side Clerk
+// owner identity in addition to the normal authenticated app shell.
 import { db } from "@/db";
 import { campaignRecords, campaigns, contacts, messages, organizationMembers, organizations, productSurveys, users } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/Surfaces";
@@ -17,20 +16,20 @@ export const dynamic = "force-dynamic";
 
 export default async function PlatformAdminPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  // First-visit bootstrap: the allowlisted subject claims administration
-  // here. claimPlatformAdmin only succeeds when the verified subject matches
-  // the server-configured allowlist (the database compares them and raises
-  // 42501 otherwise), so this cannot be spoofed into an escalation.
-  let admin = user.isPlatformAdmin;
-  if (!admin && user.clerkUserId) {
-    try {
-      admin = await claimPlatformAdmin(user.clerkUserId, user.email);
-    } catch {
-      admin = false;
-    }
+  if (!user) {
+    await auditPlatformAdminAttempt(null, "denied", "unauthenticated");
+    redirect("/login");
   }
-  if (!admin) redirect("/dashboard");
+  try {
+    await requireWorkflowAdminOwner({
+      clerkUserId: user.clerkUserId,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      userId: user.id,
+    });
+  } catch {
+    redirect("/dashboard");
+  }
 
   const [[orgCount], [userCount], [campaignCount], [contactCount], [failedJobs], [emailCount]] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(organizations),

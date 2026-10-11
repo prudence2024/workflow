@@ -1,5 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
+import { db } from "@/db";
+import { auditLogs } from "@/db/schema";
 import { withTenant, withUserContext, type Identity, type TenantTx } from "@/lib/tenant";
 
 /**
@@ -22,6 +24,51 @@ export class AuthorizationError extends Error {
     super(message);
     this.name = "AuthorizationError";
   }
+}
+
+const WORKFLOW_ADMIN_OWNER_ID = "user_3KTFmoEUnXORTAvZDOYIfYw0Ga7";
+const WORKFLOW_ADMIN_OWNER_EMAIL = "okwuborprudence@gmail.com";
+
+export type AdminIdentity = {
+  clerkUserId: string | null;
+  email: string;
+  emailVerified: boolean;
+  userId?: string | null;
+};
+
+/** Exact owner identity. This module is server-only and is never imported by client code. */
+export function isWorkflowAdminOwner(identity: AdminIdentity): boolean {
+  return (
+    identity.clerkUserId === WORKFLOW_ADMIN_OWNER_ID &&
+    identity.email.trim().toLowerCase() === WORKFLOW_ADMIN_OWNER_EMAIL &&
+    identity.emailVerified
+  );
+}
+
+/** Best-effort audit: a failed audit write must never turn a deny into an allow. */
+export async function auditPlatformAdminAttempt(
+  userId: string | null | undefined,
+  outcome: "granted" | "denied",
+  reason: string,
+): Promise<void> {
+  try {
+    await db.insert(auditLogs).values({
+      ...(userId ? { userId } : {}),
+      action: `platform_admin_access_${outcome}`,
+      entityType: "security",
+      metadata: { reason: reason.slice(0, 120) },
+    });
+  } catch {
+    // Security decisions remain fail-closed if audit storage is unavailable.
+  }
+}
+
+export async function requireWorkflowAdminOwner(identity: AdminIdentity): Promise<void> {
+  if (!isWorkflowAdminOwner(identity)) {
+    await auditPlatformAdminAttempt(identity.userId, "denied", "owner_identity_mismatch");
+    throw new AuthorizationError("Platform administration is restricted.", "forbidden");
+  }
+  await auditPlatformAdminAttempt(identity.userId, "granted", "owner_identity_verified");
 }
 
 export async function getPermissions(clerkUserId: string, orgId: string): Promise<string[]> {

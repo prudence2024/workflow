@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { newToken } from "@/lib/id";
 import { withUserContext, withUserSession, type Identity } from "@/lib/tenant";
 import type { Role } from "@/lib/rbac";
+import { isWorkflowAdminOwner } from "@/lib/authorization";
 
 const SESSION_COOKIE = "fops_session";
 const ORG_COOKIE = "fops_org";
@@ -138,18 +139,23 @@ async function ensureLocalProfile(
   firstName: string;
   lastName: string;
   profileComplete: boolean;
+  emailVerified: boolean;
 } | null> {
   let email: string | undefined;
   let name: string | undefined;
   let firstName = "";
   let lastName = "";
+  let emailVerified = false;
 
   try {
     const { clerkClient } = await import("@clerk/nextjs/server");
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(clerkUserId);
-    email =
-      clerkUser.primaryEmailAddress?.emailAddress ?? clerkUser.emailAddresses?.[0]?.emailAddress;
+    const primaryEmail = clerkUser.primaryEmailAddress;
+    const fallbackEmail = clerkUser.emailAddresses?.[0];
+    email = primaryEmail?.emailAddress ?? fallbackEmail?.emailAddress;
+    emailVerified =
+      (primaryEmail ?? fallbackEmail)?.verification?.status === "verified";
     firstName = clerkUser.firstName?.trim() ?? "";
     lastName = clerkUser.lastName?.trim() ?? "";
     name = [firstName, lastName].filter(Boolean).join(" ") || clerkUser.username || undefined;
@@ -201,10 +207,16 @@ async function ensureLocalProfile(
     firstName,
     lastName,
     profileComplete: Boolean(firstName && lastName),
+    emailVerified,
   };
 }
 
-export async function isPlatformAdminSubject(clerkUserId: string): Promise<boolean> {
+export async function isPlatformAdminSubject(
+  clerkUserId: string,
+  email: string,
+  emailVerified: boolean,
+): Promise<boolean> {
+  if (!isWorkflowAdminOwner({ clerkUserId, email, emailVerified })) return false;
   const rows = await db.execute<{ ok: boolean }>(
     sql`select app.is_platform_admin_user(${clerkUserId}) as ok`,
   );
@@ -231,8 +243,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       firstName: profile.firstName,
       lastName: profile.lastName,
       profileComplete: profile.profileComplete,
-      isPlatformAdmin: await isPlatformAdminSubject(subject),
-      emailVerified: true,
+      isPlatformAdmin: await isPlatformAdminSubject(subject, profile.email, profile.emailVerified),
+      emailVerified: profile.emailVerified,
       clerkUserId: subject,
       legacySessionToken: null,
     };
@@ -299,7 +311,7 @@ async function getLegacySessionUser(): Promise<CurrentUser | null> {
     // development accounts usable while Clerk-managed identities use the
     // stricter first/last-name completion flow above.
     profileComplete: true,
-    isPlatformAdmin: row.isPlatformAdmin,
+    isPlatformAdmin: false,
     emailVerified: row.emailVerified,
     clerkUserId: null,
     legacySessionToken: token,
