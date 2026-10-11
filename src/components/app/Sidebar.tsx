@@ -18,6 +18,8 @@ const ICONS: Record<string, ReactElement> = {
   communications: <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
   forms: <path d="M4 3h16v18H4zM8 8h8M8 12h8M8 16h4" />,
   reports: <path d="M4 20V10m6 10V4m6 16v-7" />,
+  billing: <path d="M4 6h16v12H4V6zm3 3h.01M7 12h.01M7 15h.01M11 15h6M11 12h6" />,
+  help: <path d="M9.5 9a2.5 2.5 0 115 0c0 1.7-2.5 1.8-2.5 3.5M12 17h.01M12 22a10 10 0 100-20 10 10 0 000 20z" />,
   settings: (
     <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9c.26.604.852 1 1.51 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.51 1z" />
   ),
@@ -43,14 +45,15 @@ function Chevron({ direction }: { direction: "left" | "right" }) {
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
   { href: "/contacts", label: "Records", icon: "contacts" },
+  { href: "/form-operations", label: "Forms", icon: "forms" },
   { href: "/campaigns", label: "Campaigns", icon: "campaigns" },
   { href: "/imports", label: "Imports", icon: "imports" },
-  { href: "/downloads", label: "Downloads", icon: "downloads" },
   { href: "/communications", label: "Communications", icon: "communications" },
-  { href: "/form-operations", label: "Form operations", icon: "forms" },
-  { href: "/templates", label: "Templates", icon: "templates" },
+  { href: "/downloads", label: "Downloads", icon: "downloads" },
   { href: "/reports", label: "Reports", icon: "reports" },
+  { href: "/settings/usage", label: "Billing", icon: "billing" },
   { href: "/settings/organization", label: "Settings", icon: "settings" },
+  { href: "/help", label: "Help and guide", icon: "help" },
 ];
 
 const SIDEBAR_STORAGE_KEY = "workflow:sidebar-collapsed";
@@ -90,11 +93,9 @@ export function Sidebar({ isPlatformAdmin, asMobile = false, onNavigate }: { isP
       )}
     >
       <div className={cn("relative flex h-16 items-center border-b border-[var(--color-border)]", collapsed && !asMobile ? "justify-center px-2" : "justify-between px-5")}>
-        {collapsed && !asMobile ? <Link href="/dashboard" className="-translate-y-2" aria-label="Workflow dashboard"><BrandMark size={28} /></Link> : <BrandLockup href="/dashboard" size={28} />}
+        {collapsed && !asMobile ? <button type="button" onClick={toggleCollapsed} className="-translate-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]" aria-label="Expand sidebar"><BrandMark size={28} /></button> : <BrandLockup href="/dashboard" size={28} />}
         {!asMobile && (
-          <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-pressed={collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} className={cn("rounded-md text-[var(--color-muted)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]", collapsed ? "absolute bottom-1 right-1 p-0.5" : "p-1.5")}>
-            <Chevron direction={collapsed ? "right" : "left"} />
-          </button>
+          !collapsed && <button type="button" onClick={toggleCollapsed} aria-label="Collapse sidebar" aria-pressed={false} title="Collapse sidebar" className="rounded-md p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]"><Chevron direction="left" /></button>
         )}
       </div>
       <nav className={cn("min-h-0 flex-1 space-y-1 overflow-y-auto py-4", collapsed && !asMobile ? "px-2" : "px-3")}>

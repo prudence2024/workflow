@@ -5,6 +5,12 @@ export type ParsedSpreadsheet = {
   rows: Record<string, string>[];
 };
 
+/** Stable, human-readable keys for columns that are not built-in contact fields. */
+export function customFieldKey(label: string, index = 0): string {
+  const base = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || `custom_field_${index + 1}`;
+  return base.startsWith("custom_") ? base : `custom_${base}`;
+}
+
 export function parseSpreadsheet(buffer: Buffer, fileName: string): ParsedSpreadsheet {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];

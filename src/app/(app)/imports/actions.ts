@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { activityEvents, contactImports, contacts, customFieldDefinitions, files, importErrors, imports } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { inWorkspace } from "@/lib/data";
-import { parseSpreadsheet } from "@/lib/spreadsheet";
+import { customFieldKey, parseSpreadsheet } from "@/lib/spreadsheet";
 import { saveBuffer } from "@/lib/storage";
 import { normalizeEmail, normalizePhone, validateContactRow } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
@@ -14,6 +14,7 @@ import { incrementUsage } from "@/lib/usage";
 import { assertPlanLimit } from "@/lib/planLimits";
 
 const CONTACT_FIELDS = ["firstName", "lastName", "email", "phone", "company", "address"] as const;
+const STANDARD_COLUMNS = new Set(["firstname", "first_name", "lastname", "last_name", "email", "phone", "company", "organization", "organisation", "address"]);
 
 async function requireOrgContext() {
   const user = await getCurrentUser();
@@ -69,6 +70,20 @@ export async function uploadImportAction(formData: FormData) {
   const fileType = file!.name.toLowerCase().endsWith(".csv") ? "csv" : "xlsx";
 
   const record = await inWorkspace({ user, org }, async (tx) => {
+    // Preserve every non-standard spreadsheet column as a workspace field.
+    // The import preview on the next step exposes these definitions for mapping;
+    // no customer data is silently discarded.
+    const existing = await tx.select({ key: customFieldDefinitions.key }).from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
+    const existingKeys = new Set(existing.map((field) => field.key));
+    for (const [index, column] of columns.entries()) {
+      const normalized = column.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+      if (!normalized || STANDARD_COLUMNS.has(normalized)) continue;
+      let key = customFieldKey(column, index);
+      let suffix = 2;
+      while (existingKeys.has(key)) key = `${customFieldKey(column, index)}_${suffix++}`;
+      await tx.insert(customFieldDefinitions).values({ orgId: org.orgId, key, label: column.trim() || `Custom field ${index + 1}`, fieldType: "text" }).onConflictDoNothing();
+      existingKeys.add(key);
+    }
     const [created] = await tx
       .insert(imports)
       .values({

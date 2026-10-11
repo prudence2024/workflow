@@ -69,6 +69,10 @@ export default async function UsagePage() {
                 <p className="font-display text-[14.5px] font-semibold text-[var(--color-ink)]">{p.name}</p>
                 <p className="mt-1 text-[12.5px] text-[var(--color-muted)]">{formatNgnPrice(key)}/mo</p>
                 {isCurrent && <p className="mt-2 text-[11.5px] font-semibold text-[var(--color-brand)]">Current plan</p>}
+                {!isCurrent && <>
+                  <p className="mt-2 text-[12px] text-[var(--color-muted)]">Unlocks up to {p.limits.contacts.toLocaleString()} contacts and {p.limits.activeCampaigns} active campaigns.</p>
+                  <LinkButton href={`/pricing?requestedPlan=${key}`} size="sm" className="mt-3">Upgrade to {p.name}</LinkButton>
+                </>}
               </div>
             );
           })}
