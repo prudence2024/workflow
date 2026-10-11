@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { StaleActionRecovery } from "@/components/runtime/StaleActionRecovery";
+import { PwaRuntime } from "@/components/pwa/PwaRuntime";
 import "./globals.css";
 
 /**
@@ -30,6 +31,7 @@ export const metadata: Metadata = {
   description:
     "Manage records, automate processes, communicate through bulk email and SMS, organize campaigns, schedule reminders and report on operations — all in one multi-tenant workspace.",
   applicationName: "Workflow",
+  manifest: "/manifest.webmanifest",
   // icon-light.png is the transparent-background W mark (icon-dark.png has a
   // baked-in white page background around its dark tile, which renders as a
   // white box in browser tabs). No logo redraw: same approved symbol.
@@ -64,7 +66,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased">
-        <ThemeProvider><StaleActionRecovery />{clerkConfigured() ? <ClerkProvider>{children}</ClerkProvider> : children}</ThemeProvider>
+        <ThemeProvider>
+          <StaleActionRecovery />
+          {clerkConfigured() ? <ClerkProvider>{children}</ClerkProvider> : children}
+          <PwaRuntime />
+        </ThemeProvider>
       </body>
     </html>
   );

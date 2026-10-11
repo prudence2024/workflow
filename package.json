@@ -8,6 +8,9 @@
     "build:worker": "node scripts/build-worker.mjs",
     "deploy:testing": "node scripts/deploy-testing.mjs",
     "preview:worker": "opennextjs-cloudflare preview",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android",
+    "android:build:debug": "cap sync android && cd android && gradlew.bat assembleDebug",
     "start": "next start",
     "form-worker": "node scripts/form-automation-worker.mjs",
     "lint": "eslint .",
@@ -21,6 +24,9 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/splash-screen": "^8.0.2",
     "@clerk/nextjs": "^6.35.0",
     "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "^3.0.3",
@@ -37,6 +43,7 @@
     "zod": "^4.6.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@opennextjs/cloudflare": "^1.20.7",
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.15",
