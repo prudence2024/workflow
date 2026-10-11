@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"
+  DATABASE_RUNTIME = "node"
+  NEXT_PUBLIC_APP_URL = "https://workflow-application.netlify.app"
+
+# Netlify's native Next.js runtime handles SSR, RSC, API routes, and Server
+# Actions. No Cloudflare/OpenNext build command is used for this site.

@@ -38,3 +38,6 @@ audit/
 
 # Wrangler local state (dev sessions, preview URLs)
 .wrangler/
+
+# Local Netlify folder
+.netlify

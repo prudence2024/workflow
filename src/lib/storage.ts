@@ -32,13 +32,45 @@ export type StoredObject = {
   driver: StorageDriver;
 };
 
+type NativeR2Bucket = {
+  put(key: string, value: ArrayBuffer | ArrayBufferView | ReadableStream | string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
+  delete(key: string): Promise<void>;
+};
+
+async function nativeR2Bucket(): Promise<NativeR2Bucket | null> {
+  // The Cloudflare binding adapter is loaded only by the retained Worker
+  // fallback. Netlify's normal Node runtime never imports OpenNext or a
+  // Cloudflare global while handling an application request.
+  if (process.env.DATABASE_RUNTIME !== "edge") return null;
+  try {
+    const { getCloudflareR2Bucket } = await import("@/lib/cloudflare-r2");
+    return getCloudflareR2Bucket();
+  } catch {
+    return null;
+  }
+}
+
 export function isR2Configured(): boolean {
+  if (process.env.DATABASE_RUNTIME === "edge") return true;
   return Boolean(
-    process.env.R2_ACCOUNT_ID &&
+    (process.env.R2_ACCOUNT_ID || process.env.R2_ENDPOINT) &&
       process.env.R2_ACCESS_KEY_ID &&
       process.env.R2_SECRET_ACCESS_KEY &&
       process.env.R2_BUCKET,
   );
+}
+
+function r2Endpoint(): { origin: string; host: string } {
+  const configured = process.env.R2_ENDPOINT?.trim();
+  if (configured) {
+    const url = new URL(configured);
+    if (url.protocol !== "https:") throw new Error("R2_ENDPOINT must use HTTPS");
+    return { origin: url.origin, host: url.host };
+  }
+  const accountId = process.env.R2_ACCOUNT_ID;
+  if (!accountId) throw new Error("R2_ACCOUNT_ID or R2_ENDPOINT is not configured");
+  return { origin: `https://${accountId}.r2.cloudflarestorage.com`, host: `${accountId}.r2.cloudflarestorage.com` };
 }
 
 export function activeDriver(): StorageDriver {
@@ -46,7 +78,7 @@ export function activeDriver(): StorageDriver {
   if (process.env.NODE_ENV === "production") {
     throw new Error(
       "R2 is not configured. Refusing to store uploads on the local filesystem in production — " +
-        "set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET.",
+        "set R2_ACCOUNT_ID or R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET.",
     );
   }
   return "local";
@@ -77,7 +109,12 @@ export async function saveBuffer(
   const key = objectKey(orgId, fileName);
 
   if (driver === "r2") {
-    await r2Request("PUT", key, data, contentType);
+    const bucket = await nativeR2Bucket();
+    if (bucket) {
+      await bucket.put(key, data, { httpMetadata: { contentType } });
+    } else {
+      await r2Request("PUT", key, data, contentType);
+    }
     return { key, sizeBytes: data.byteLength, driver };
   }
 
@@ -91,6 +128,12 @@ export async function saveBuffer(
 export async function readStoredFile(key: string): Promise<Buffer> {
   const driver = activeDriver();
   if (driver === "r2") {
+    const bucket = await nativeR2Bucket();
+    if (bucket) {
+      const object = await bucket.get(key);
+      if (!object) throw new Error("Stored upload was not found");
+      return Buffer.from(await object.arrayBuffer());
+    }
     const res = await r2Request("GET", key);
     return Buffer.from(await res.arrayBuffer());
   }
@@ -101,7 +144,9 @@ export async function readStoredFile(key: string): Promise<Buffer> {
 export async function deleteStoredFile(key: string): Promise<void> {
   const driver = activeDriver();
   if (driver === "r2") {
-    await r2Request("DELETE", key);
+    const bucket = await nativeR2Bucket();
+    if (bucket) await bucket.delete(key);
+    else await r2Request("DELETE", key);
   }
 }
 
@@ -120,10 +165,10 @@ export function signedDownloadUrl(key: string, expiresInSeconds = 300): string {
   if (!isR2Configured()) {
     throw new Error("signedDownloadUrl requires R2 configuration");
   }
-  const accountId = process.env.R2_ACCOUNT_ID!;
+  const endpoint = r2Endpoint();
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const bucket = process.env.R2_BUCKET!;
-  const host = `${accountId}.r2.cloudflarestorage.com`;
+  const host = endpoint.host;
   const requestPath = `/${bucket}/${key}`;
 
   const now = new Date();
@@ -161,7 +206,7 @@ export function signedDownloadUrl(key: string, expiresInSeconds = 300): string {
     .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(query[k])}`)
     .join("&");
 
-  return `https://${host}${requestPath}?${queryString}&X-Amz-Signature=${signature}`;
+  return `${endpoint.origin}${requestPath}?${queryString}&X-Amz-Signature=${signature}`;
 }
 
 async function r2Request(
@@ -170,9 +215,9 @@ async function r2Request(
   body?: Buffer,
   contentType?: string,
 ): Promise<Response> {
-  const accountId = process.env.R2_ACCOUNT_ID!;
+  const endpoint = r2Endpoint();
   const bucket = process.env.R2_BUCKET!;
-  const host = `${accountId}.r2.cloudflarestorage.com`;
+  const host = endpoint.host;
   const requestPath = `/${bucket}/${key}`;
   const payload = body ?? Buffer.alloc(0);
   const payloadHash = body ? payloadSha256(payload) : EMPTY_PAYLOAD_SHA256;
@@ -194,7 +239,7 @@ async function r2Request(
     service: "s3",
   });
 
-  const res = await fetch(`https://${host}${requestPath}`, {
+  const res = await fetch(`${endpoint.origin}${requestPath}`, {
     method,
     headers: signedHeaders,
     body: body ? new Uint8Array(payload) : undefined,
