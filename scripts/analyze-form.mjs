@@ -63,7 +63,15 @@ async function main() {
       const items = Array.from(document.querySelectorAll('div[role="listitem"]')).map((li) => {
         const first = li.querySelector('input, textarea, [role="radio"], [role="checkbox"], [role="listbox"]');
         const question = li.querySelector('[role="heading"], label');
-        const questionText = question?.getAttribute("aria-label") || question?.textContent || li.textContent || "";
+        // Prefer the accessible question node. Remove only helper/hidden
+        // descendants before falling back to the list item text.
+        let questionText = question?.getAttribute("aria-label") || "";
+        if (!questionText && question) {
+          const clone = question.cloneNode(true);
+          clone.querySelectorAll('[aria-hidden="true"], [role="note"], [data-tooltip]').forEach((node) => node.remove());
+          questionText = clone.textContent || "";
+        }
+        if (!questionText) questionText = question?.textContent || li.textContent || "";
         return {
           text: (li.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120),
           questionText: questionText.replace(/\s+/g, " ").trim().slice(0, 160),

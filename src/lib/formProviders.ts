@@ -97,8 +97,9 @@ export async function analyzeGoogleForm(rawUrl: string): Promise<AnalyzedForm> {
 
 /**
  * Pure question-text parsing (unit-tested): Google appends "*" plus the
- * "Your answer" affordance to required questions, e.g.
- * "Full Name *Your answer". Labels are truncated to 80 chars.
+ * "Your answer" affordance to questions, e.g. "Full Name *Your answer".
+ * Only the exact trailing affordance is removed; legitimate title text is
+ * preserved. Labels are truncated to 80 chars.
  */
 export function parseGoogleQuestionText(
   rawText: string,
@@ -107,8 +108,8 @@ export function parseGoogleQuestionText(
 ): { label: string; required: boolean } {
   const text = rawText.replace(/\s+/g, " ").trim().slice(0, 160);
   const label = text
-    .replace(/\bYour answer\b/gi, " ")
-    .replace(/\s*\*\s*/g, " ")
+    .replace(/\s*\*?\s*Your answer\s*$/, "")
+    .replace(/\s*\*\s*$/, "")
     .replace(/\s+/g, " ")
     .trim() || `Question ${index + 1}`;
   return { label: label.slice(0, 80), required: /\*/.test(requiredText.replace(/\s+/g, " ").trim().slice(0, 160)) };

@@ -46,7 +46,7 @@ export default async function SignupPage({
             routing="hash"
             signInUrl="/login"
             appearance={{ elements: { logoBox: "hidden" } }}
-            forceRedirectUrl={`/auth/complete?next=${encodeURIComponent("/onboarding?step=workspace")}`}
+            forceRedirectUrl={`/auth/complete?next=${encodeURIComponent("/dashboard")}`}
           />
         </div>
       </div>
