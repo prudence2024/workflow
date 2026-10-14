@@ -7,6 +7,7 @@ import { LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Status";
 import { ProgressBar, TD, TH, THead, TR, Table } from "@/components/ui/Data";
 import { formatDate, pct } from "@/lib/utils";
+import { campaignPresentation } from "@/lib/campaignStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,8 @@ export default async function CampaignsPage() {
             <tbody>
               {rows.map((c) => {
                 const total = c.stats.total ?? 0;
-                const done = (c.stats.successful ?? 0) + (c.stats.failed ?? 0) + (c.stats.skipped ?? 0);
+                const done = (c.stats.successful ?? 0) + (c.stats.failed ?? 0) + (c.stats.skipped ?? 0) + (c.stats.human_action_required ?? 0) + (c.stats.needs_attention ?? 0) + (c.stats.unverified ?? 0) + (c.stats.cancelled ?? 0);
+                const presentation = campaignPresentation(c.status, c.stats);
                 return (
                   <TR key={c.id}>
                     <TD>
@@ -67,7 +69,7 @@ export default async function CampaignsPage() {
                       </div>
                     </TD>
                     <TD>
-                      <StatusPill status={c.status} />
+                    <StatusPill status={presentation.key} label={presentation.label} />
                     </TD>
                     <TD className="text-[var(--color-muted)]">{formatDate(c.updatedAt)}</TD>
                   </TR>
@@ -78,7 +80,7 @@ export default async function CampaignsPage() {
         )}
       </Card>
       <Alert title="Campaign statuses">
-        Draft means the campaign is not ready to run. Archived campaigns remain available for history but must be restored before queueing. Queued and running campaigns are processing work; Successful and Failed describe the completed outcome.
+        Statuses are derived from lifecycle and destination-confirmed record outcomes. Queued records await execution; completed successfully requires every eligible record to have destination evidence. Failed, unverified and needs-attention outcomes remain visible and are never presented as success.
       </Alert>
     </div>
   );

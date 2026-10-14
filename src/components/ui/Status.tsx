@@ -41,7 +41,7 @@ function labelize(status: string): string {
     .join(" ");
 }
 
-export function StatusPill({ status, className }: { status: string; className?: string }) {
+export function StatusPill({ status, label, className }: { status: string; label?: string; className?: string }) {
   const style = STATUS_STYLES[status] ?? "bg-[var(--color-canvas)] text-[var(--color-ink-soft)] border-[var(--color-border)]";
   return (
     <span
@@ -52,7 +52,7 @@ export function StatusPill({ status, className }: { status: string; className?: 
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {labelize(status)}
+      {label ?? labelize(status)}
     </span>
   );
 }

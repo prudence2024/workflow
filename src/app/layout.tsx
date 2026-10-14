@@ -2,9 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
+import Script from "next/script";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { StaleActionRecovery } from "@/components/runtime/StaleActionRecovery";
 import { PwaRuntime } from "@/components/pwa/PwaRuntime";
+import { WorkflowSplashGate } from "@/components/splash/WorkflowSplashGate";
 import "./globals.css";
 
 /**
@@ -74,15 +76,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={`${manrope.variable} ${jetbrainsMono.variable}`}>
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(() => { try { const m = localStorage.getItem('workflow-theme') || 'system'; const d = m === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : m; const root = document.documentElement; root.dataset.theme = d; root.dataset.themeMode = m; root.style.colorScheme = d; } catch {} })()`,
-          }}
-        />
+        <Script id="workflow-theme" strategy="beforeInteractive">
+          {`(() => { try { const m = localStorage.getItem('workflow-theme') || 'system'; const d = m === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : m; const root = document.documentElement; root.dataset.theme = d; root.dataset.themeMode = m; root.style.colorScheme = d; } catch {} })()`}
+        </Script>
       </head>
       <body className="bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased">
         <ThemeProvider>
           <StaleActionRecovery />
+          <WorkflowSplashGate />
           {clerkConfigured() ? <ClerkProvider>{children}</ClerkProvider> : children}
           <PwaRuntime />
         </ThemeProvider>

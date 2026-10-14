@@ -44,6 +44,8 @@ export default async function SignupPage({
           {/* Clerk owns identity creation, verification, and social OAuth. Profile details stay in onboarding. */}
           <SignUp
             routing="hash"
+            signInUrl="/login"
+            appearance={{ elements: { logoBox: "hidden" } }}
             forceRedirectUrl={`/auth/complete?next=${encodeURIComponent("/onboarding?step=workspace")}`}
           />
         </div>

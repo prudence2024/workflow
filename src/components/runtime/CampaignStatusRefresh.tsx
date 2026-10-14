@@ -42,9 +42,12 @@ export function CampaignStatusRefresh({ campaignId, active }: CampaignStatusRefr
 
   useEffect(() => {
     if (!active) return;
-    void poll();
+    const initialPoll = window.setTimeout(() => void poll(), 0);
     const interval = window.setInterval(() => void poll(), 5000);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialPoll);
+      window.clearInterval(interval);
+    };
   }, [active, poll]);
 
   const currentActive = snapshot?.active ?? active;

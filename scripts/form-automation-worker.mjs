@@ -10,6 +10,7 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { config } from "dotenv";
 import pg from "pg";
+import { runWorkerPreflight } from "./worker-preflight.mjs";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -23,6 +24,8 @@ const batchSize = Math.max(1, Math.min(25, Number(process.env.FORM_WORKER_BATCH_
 const port = Number(process.env.PORT ?? process.env.FORM_WORKER_HEALTH_PORT ?? 8787);
 const databaseUrl = process.env.WORKER_DATABASE_URL;
 if (!databaseUrl) throw new Error("FORM_WORKER_REQUIRES_RESTRICTED_DATABASE_URL");
+const campaignId = process.env.WORKFLOW_WORKER_CAMPAIGN_ID?.trim();
+if (!campaignId) throw new Error("FORM_WORKER_REQUIRES_CAMPAIGN_SCOPE");
 const state = { startedAt: new Date(), lastHeartbeatAt: null, lastCycleAt: null, lastError: null, cycles: 0 };
 
 // Fail before polling if the supplied login can bypass tenant restrictions or
@@ -44,6 +47,16 @@ try {
   if (!role || role.rolsuper || role.rolbypassrls || role.owns_app_tables || !role.worker_role) {
     throw new Error('FORM_WORKER_RESTRICTED_ROLE_REQUIRED');
   }
+  // Run the same read-only environment, branch, identity, scope and exact
+  // local-form checks as the child workers before opening the supervisor or
+  // starting a polling cycle. No campaign rows are claimed or changed here.
+  const preflight = await runWorkerPreflight({
+    client: guard,
+    campaignId,
+    recordId: null,
+    recover: false,
+  });
+  console.log(`form automation preflight passed; mode=${preflight.mode} campaign=${campaignId}`);
 } finally {
   await guard.end();
 }
@@ -82,8 +95,11 @@ async function counts() {
 
 async function cycle() {
   state.lastHeartbeatAt = new Date();
-  const analysis = await runChild("scripts/analyze-form-worker.mjs", ["--recover", "--limit", String(batchSize)]);
-  const submission = await runChild("scripts/form-worker.mjs", ["--limit", String(batchSize)]);
+  // Stale-row recovery is an explicit operator action. The development
+  // preflight deliberately rejects implicit recovery, so the supervisor must
+  // not pass --recover on every poll cycle.
+  const analysis = await runChild("scripts/analyze-form-worker.mjs", ["--campaign", campaignId, "--limit", String(batchSize)]);
+  const submission = await runChild("scripts/form-worker.mjs", ["--campaign", campaignId, "--limit", String(batchSize)]);
   state.lastCycleAt = new Date();
   state.cycles += 1;
   if (!analysis.ok || !submission.ok) state.lastError = "child_worker_failed";

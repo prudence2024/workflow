@@ -9,7 +9,6 @@ import {
   parkRecordAction,
   pauseCampaignAction,
   retryFailedAction,
-  runCampaignAction,
   saveFieldMappingAction,
   sendConfirmationEmailsAction,
   unarchiveCampaignAction,
@@ -24,6 +23,10 @@ import { analysisStatusMessage } from "@/lib/formAnalysisJobs";
 import type { FormField } from "@/db/schema";
 import { CampaignStatusRefresh } from "@/components/runtime/CampaignStatusRefresh";
 import { ConfirmSubmit } from "@/components/ui/ConfirmSubmit";
+import { MappingEditor } from "@/components/campaigns/MappingEditor";
+import { RunCampaignButton } from "@/components/campaigns/RunCampaignButton";
+import { campaignPresentation } from "@/lib/campaignStatus";
+import { safeErrorDiagnostic } from "@/lib/diagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -44,43 +47,53 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "#94a3b8",
 };
 
-const STATUS_COPY: Record<string, string> = {
-  draft: "Created but not ready to run. It does not send anything.",
-  ready: "Form mapping is saved and the campaign can be queued when it has contacts.",
-  archived: "Removed from the active list but preserved for history. Restore it before running.",
-  queued: "Submitted for processing.",
-  running: "Currently processing.",
-  paused: "Temporarily stopped. Resume or cancel when ready.",
-  completed: "Completed successfully.",
-};
-
 export default async function CampaignDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; analyze?: string; analysis?: string; page?: string }>;
+  searchParams: Promise<{ error?: string; analyze?: string; analysis?: string; page?: string; saved?: string; queued?: string }>;
 }) {
+  console.info("[campaign-route] entry route=/campaigns/[id] paramsPromise=true");
   const { user, currentOrg: org } = await getRequestWorkspaceContext();
-  if (!user) redirect("/login");
-  if (!org) redirect("/onboarding");
+  if (!user) {
+    console.warn("[campaign-route] redirect destination=login userPresent=false orgPresent=" + String(Boolean(org)));
+    redirect("/login");
+  }
+  if (!org) {
+    console.warn("[campaign-route] redirect destination=onboarding userPresent=true orgPresent=false");
+    redirect("/onboarding");
+  }
 
   const { id } = await params;
-  const { error, analyze, analysis, page } = await searchParams;
+  console.info("[campaign-route] params resolved campaignIdPresent=" + String(Boolean(id)));
+  const { error, analyze, analysis, page, saved, queued } = await searchParams;
   const recordPage = Math.max(1, Number.parseInt(page ?? "1", 10) || 1);
 
   // Tenant-scoped read: campaign, records, templates and custom fields all in
   // one transaction as the restricted role. A campaign from another workspace
   // simply resolves to null here (RLS), which becomes a 404.
-  const detail = await getCampaignDetail({ user, org }, id, { page: recordPage });
-  if (!detail.campaign) notFound();
+  let detail;
+  try {
+    detail = await getCampaignDetail({ user, org }, id, { page: recordPage });
+  } catch (error) {
+    console.error("[campaign-route] campaign lookup failed", safeErrorDiagnostic(error));
+    throw error;
+  }
+  console.info("[campaign-route] campaign lookup campaignIdPresent=" + String(Boolean(id)) + " orgPresent=true campaignFound=" + String(Boolean(detail.campaign)));
+  if (!detail.campaign) {
+    console.warn("[campaign-route] not found campaignIdPresent=" + String(Boolean(id)) + " orgPresent=true");
+    notFound();
+  }
 
   const campaign = detail.campaign;
   const fields = (campaign.formDefinition as FormField[]) ?? [];
   const mapping = campaign.fieldMapping;
   const stats = campaign.stats;
+  const presentation = campaignPresentation(campaign.status, stats);
 
   const contactFieldOptions = [
+    { key: "fullName", label: "Full name" },
     { key: "firstName", label: "First name" },
     { key: "lastName", label: "Last name" },
     { key: "email", label: "Email" },
@@ -92,9 +105,15 @@ export default async function CampaignDetailPage({
 
   const total = stats.total ?? 0;
   const hasFailed = (stats.failed ?? 0) > 0;
-  const activeRecordCount = (stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0);
+  // Queued rows are an editable audience until the explicit Queue run action
+  // changes the campaign to running. Only a running campaign or records that
+  // have been claimed/retried are execution-active and lock mapping.
+  const activeRecordCount = (stats.retrying ?? 0) + (stats.processing ?? 0);
   const activeRun = campaign.status === "running" || activeRecordCount > 0;
-  const canRun = campaign.status !== "archived" && (stats.queued ?? 0) + (stats.retrying ?? 0) > 0 && !activeRun;
+  const canReanalyzeForm = !activeRun && ["draft", "ready"].includes(campaign.status);
+  const canChangeForm = canReanalyzeForm && total === 0;
+  const missingRequiredMapping = fields.some((field) => field.required && !mapping[field.name]);
+  const canRun = campaign.status !== "archived" && (stats.queued ?? 0) + (stats.retrying ?? 0) > 0 && !activeRun && !missingRequiredMapping;
   const queueButtonLabel = activeRun
     ? campaign.status === "running" ? "Running…" : "Queued…"
     : campaign.status === "completed" ? "Run again" : "Queue run";
@@ -104,13 +123,15 @@ export default async function CampaignDetailPage({
     (campaign.status === "running" &&
       (stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0) > 0);
 
+  console.info("[campaign-route] run control render status=" + campaign.status + " canRun=" + String(canRun) + " queued=" + String((stats.queued ?? 0) + (stats.retrying ?? 0)));
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="font-display text-[20px] font-semibold text-[var(--color-ink)]">{campaign.name}</h1>
-            <StatusPill status={campaign.status} />
+            <StatusPill status={presentation.key} label={presentation.label} />
           </div>
           <p className="mt-0.5 text-[13px] text-[var(--color-muted)] capitalize">{campaign.type.replace(/_/g, " ")}</p>
         </div>
@@ -142,12 +163,7 @@ export default async function CampaignDetailPage({
               </Button>
             </form>
           )}
-          <form action={runCampaignAction}>
-            <input type="hidden" name="campaignId" value={id} />
-            <Button type="submit" size="sm" disabled={!canRun} title="Queues records for the submission worker — nothing is submitted from the browser">
-              {queueButtonLabel}
-            </Button>
-          </form>
+          <RunCampaignButton campaignId={id} disabled={!canRun} label={queueButtonLabel} />
           {campaign.status === "archived" ? (
             <form action={unarchiveCampaignAction}>
               <input type="hidden" name="campaignId" value={id} />
@@ -163,10 +179,12 @@ export default async function CampaignDetailPage({
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
-      <Alert tone={campaign.status === "archived" ? "warning" : "info"} title={`${campaign.status.charAt(0).toUpperCase()}${campaign.status.slice(1)} status`}>
-        {STATUS_COPY[campaign.status] ?? "Review this campaign before taking the next action."}
+      {queued === "1" && <Alert tone="success" title="Run queued">The campaign is running and its queued records are ready for the submission worker.</Alert>}
+      <Alert tone={presentation.key === "completed" ? "success" : presentation.key === "failed" || presentation.key === "needs_attention" ? "warning" : presentation.key === "archived" ? "warning" : "info"} title={presentation.label}>
+        {presentation.message}
       </Alert>
-      {analysis === "queued" && <Alert tone="info" title="Analysis queued">A Node browser worker will inspect the rendered form shortly.</Alert>}
+      {analysis === "queued" && campaign.formAnalysisStatus === "queued" && <Alert tone="info" title="Analysis queued">A Node browser worker will inspect the rendered form shortly.</Alert>}
+      {analysis === "schema_changed" && <Alert tone="warning" title="Form fields changed">The destination form schema changed. Review new or unresolved fields before saving the mapping; existing matching selections were preserved.</Alert>}
       {campaign.formAnalysisStatus !== "idle" && campaign.formAnalysisStatus !== "ready" && campaign.formAnalysisStatus !== "queued" && (
         <Alert tone={campaign.formAnalysisStatus === "needs_attention" ? "warning" : "danger"} title={campaign.formAnalysisStatus === "needs_attention" ? "Needs attention" : "Analysis failed"}>
           {analysisStatusMessage(campaign.formAnalysisStatus, campaign.formAnalysisError)}
@@ -182,7 +200,7 @@ export default async function CampaignDetailPage({
         <Stat label="Successful" value={stats.successful ?? 0} hint="destination-confirmed only" />
         <Stat label="Needs attention" value={(stats.failed ?? 0) + (stats.human_action_required ?? 0) + (stats.needs_attention ?? 0)} />
         <Stat label="Unverified" value={stats.unverified ?? 0} hint="never submitted" />
-        <Stat label="Queued" value={(stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0)} />
+        <Stat label={campaign.status === "running" ? "In execution" : "Awaiting execution"} value={(stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0)} />
       </div>
 
       {total > 0 && (
@@ -203,54 +221,54 @@ export default async function CampaignDetailPage({
         </Card>
       )}
 
-      {(!campaign.formUrl || fields.length === 0 || analyze === "1") && (
-        <Card>
-          <CardHeader title="Test form" description="Check an authorized form URL and generate a reusable field definition." />
-          <CardBody>
-            <form action={analyzeFormAction} className="flex flex-wrap items-end gap-3">
+      <Card>
+        <CardHeader
+          title="Form configuration"
+          description="Keep the authorized destination visible while you review and prepare this campaign."
+        />
+        <CardBody>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-canvas)] p-3 text-[13px]">
+            <div className="min-w-0">
+              <p className="font-medium text-[var(--color-ink)]">Target form</p>
+              {campaign.formUrl ? (
+                <a href={campaign.formUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block truncate text-[var(--color-brand)] hover:underline">
+                  {campaign.formUrl}
+                </a>
+              ) : (
+                <p className="mt-1 text-[var(--color-muted)]">No form selected yet.</p>
+              )}
+            </div>
+            {campaign.formUrl && (
+              <a href={campaign.formUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] px-3 py-2 font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface)]">
+                Open form
+              </a>
+            )}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-[var(--color-muted)]">
+            <span>Analysis: <strong className="font-medium text-[var(--color-ink-soft)]">{analysisStatusMessage(campaign.formAnalysisStatus, campaign.formAnalysisError) || "Not started"}</strong></span>
+            <span>Detected fields: <strong className="font-medium text-[var(--color-ink-soft)]">{fields.length}</strong></span>
+          </div>
+          {canReanalyzeForm ? (
+            <form action={analyzeFormAction} className="mt-4 flex flex-wrap items-end gap-3">
               <input type="hidden" name="campaignId" value={id} />
               <FieldGroup className="max-w-md flex-1">
-                <Label htmlFor="formUrl">Form URL</Label>
-                <Input id="formUrl" name="formUrl" type="url" defaultValue={campaign.formUrl ?? ""} placeholder="https://forms.example.org/registration" required />
+                <Label htmlFor="formUrl">{campaign.formUrl && canChangeForm ? "Change form URL" : "Form URL"}</Label>
+                <Input id="formUrl" name="formUrl" type="url" defaultValue={campaign.formUrl ?? ""} placeholder="https://forms.example.org/registration" readOnly={!canChangeForm} required />
                 <HelpText>The platform performs a single authorized fetch — no CAPTCHA or anti-bot bypass is ever attempted.</HelpText>
               </FieldGroup>
-              <Button type="submit">Test form</Button>
+              <Button type="submit">{campaign.formUrl && fields.length > 0 ? "Re-analyze form" : "Analyze form"}</Button>
             </form>
-          </CardBody>
-        </Card>
-      )}
+          ) : (
+            <p className="mt-4 text-[12px] text-[var(--color-muted)]">The form target is locked while execution is active.</p>
+          )}
+        </CardBody>
+      </Card>
 
       {fields.length > 0 && (
         <Card>
           <CardHeader title="Field mapping" description="Map detected form fields to contact data." />
           <CardBody>
-            <form action={saveFieldMappingAction} className="space-y-4">
-              <input type="hidden" name="campaignId" value={id} />
-              <div className="grid gap-3">
-                {fields.map((field) => (
-                  <div key={field.name} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div>
-                      <p className="text-[13px] font-medium text-[var(--color-ink)]">
-                        {field.label} {field.required && <span className="text-[var(--color-danger)]">*</span>}
-                      </p>
-                      <p className="text-[11px] uppercase tracking-wide text-[var(--color-muted)]">{field.type}</p>
-                    </div>
-                    <span className="text-[var(--color-muted)]">→</span>
-                    <Select disabled={activeRun} name={`map__${field.name}`} defaultValue={mapping[field.name] ?? ""}>
-                      <option value="">— Not mapped —</option>
-                      {contactFieldOptions.map((opt) => (
-                        <option key={opt.key} value={opt.key}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-end">
-                <Button type="submit" disabled={activeRun}>Save mapping</Button>
-              </div>
-            </form>
+            <MappingEditor campaignId={id} fields={fields} initialMapping={mapping} options={contactFieldOptions} active={activeRun} saved={saved === "1"} saveAction={saveFieldMappingAction} />
           </CardBody>
         </Card>
       )}

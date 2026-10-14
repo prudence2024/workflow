@@ -8,12 +8,15 @@
  * byte cap) are exercised against a local HTTP server where possible.
  */
 import { createServer, type Server } from "node:http";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   assertFormUrlAllowed,
   fetchFormHtml,
+  isDevelopmentLocalTestForm,
   rejectUnsafeHostname,
 } from "@/lib/formUrlPolicy";
+import { isAllowedLocalFormRequest } from "../scripts/local-form-allowlist.mjs";
 
 let server: Server;
 let base = "";
@@ -57,6 +60,46 @@ afterAll(
 );
 
 describe("form URL SSRF policy", () => {
+  it("allows only the exact local form GET and submission POST when explicitly enabled", () => {
+    const env = { WORKFLOW_ALLOW_LOCAL_FORM_TEST: "1", NEON_BRANCH: "development", NODE_ENV: "development" } as NodeJS.ProcessEnv;
+    expect(isAllowedLocalFormRequest("http://localhost:3000/testing-form", "GET", env)).toBe(true);
+    expect(isAllowedLocalFormRequest("http://localhost:3000/api/testing/form-submit", "POST", env)).toBe(true);
+    expect(isAllowedLocalFormRequest("http://localhost:3000/api/testing/form-submit", "GET", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("http://localhost:3000/testing-form", "POST", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("http://localhost:3000/other", "GET", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("http://localhost:3001/testing-form", "GET", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("http://127.0.0.1:3000/testing-form", "GET", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("https://example.com/testing-form", "GET", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("http://localhost:3000/testing-form?bypass=1", "GET", env)).toBe(false);
+    expect(isAllowedLocalFormRequest("http://localhost:3000/testing-form", "GET", { ...env, WORKFLOW_ALLOW_LOCAL_FORM_TEST: undefined })).toBe(false);
+  });
+
+  it("requires the same flag and exact hostname in the shared policy", async () => {
+    const previous = { ...process.env };
+    try {
+      const mutableEnv = process.env as Record<string, string | undefined>;
+      mutableEnv.NODE_ENV = "development";
+      mutableEnv.NEON_BRANCH = "development";
+      mutableEnv.WORKFLOW_ALLOW_LOCAL_FORM_TEST = "1";
+      expect(isDevelopmentLocalTestForm("http://localhost:3000/testing-form")).toBe(true);
+      expect(isDevelopmentLocalTestForm("http://127.0.0.1:3000/testing-form")).toBe(false);
+      delete mutableEnv.WORKFLOW_ALLOW_LOCAL_FORM_TEST;
+      expect(isDevelopmentLocalTestForm("http://localhost:3000/testing-form")).toBe(false);
+      await expect(assertFormUrlAllowed("http://localhost:3000/testing-form")).rejects.toThrow(/localhost/);
+    } finally {
+      for (const key of ["NODE_ENV", "NEON_BRANCH", "WORKFLOW_ALLOW_LOCAL_FORM_TEST"]) {
+        if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+      }
+    }
+  });
+
+  it("does not treat a blocked POST as a successful worker result", () => {
+    const source = readFileSync(new URL("../scripts/form-worker.mjs", import.meta.url), "utf8");
+    expect(source).toContain('if (!confirmed) return { status: "needs_attention"');
+    expect(source).toContain('return { status: "successful", message: "Submitted and confirmed by the destination."');
+    expect(source).toContain('confirmationType: "recorded-confirmation"');
+  });
+
   it("rejects empty and malformed URLs", async () => {
     await expect(assertFormUrlAllowed("")).rejects.toThrow();
     await expect(assertFormUrlAllowed("not a url")).rejects.toThrow();
@@ -76,6 +119,14 @@ describe("form URL SSRF policy", () => {
     await expect(assertFormUrlAllowed("http://localhost/form")).rejects.toThrow(/localhost/);
     await expect(assertFormUrlAllowed("http://myprinter/form")).rejects.toThrow(/internal/);
     await expect(assertFormUrlAllowed("http://intranet.local/form")).rejects.toThrow(/internal/);
+  });
+
+  it("rejects trailing-dot localhost variants consistently", async () => {
+    const env = { WORKFLOW_ALLOW_LOCAL_FORM_TEST: "1", NEON_BRANCH: "development", NODE_ENV: "development" } as NodeJS.ProcessEnv;
+    expect(isAllowedLocalFormRequest("http://localhost.:3000/testing-form", "GET", env)).toBe(false);
+    await expect(assertFormUrlAllowed("http://localhost.:3000/testing-form")).rejects.toThrow(/localhost|internal/);
+    const source = readFileSync(new URL("../scripts/analyze-form.mjs", import.meta.url), "utf8");
+    expect(source).toContain('u.hostname.toLowerCase().replace(/\\.+$/, "")');
   });
 
   it("rejects loopback, private, link-local and metadata IPs", async () => {

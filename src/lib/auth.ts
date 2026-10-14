@@ -7,8 +7,10 @@ import { sessions, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { newToken } from "@/lib/id";
 import { withUserContext, withUserSession, type Identity } from "@/lib/tenant";
+import { resolveRequestIdentity } from "@/lib/requestIdentity";
 import type { Role } from "@/lib/rbac";
 import { isWorkflowAdminOwner } from "@/lib/authorization";
+import { safeErrorDiagnostic } from "@/lib/diagnostics";
 
 const SESSION_COOKIE = "fops_session";
 const ORG_COOKIE = "fops_org";
@@ -31,15 +33,10 @@ function clerkErrorDetails(error: unknown): {
   safeMessage: string;
 } {
   const value = error as { name?: unknown; code?: unknown; message?: unknown };
-  const rawMessage = typeof value?.message === "string" ? value.message : "unknown Clerk error";
-  const safeMessage = rawMessage
-    .replace(/(?:bearer|token|authorization)\s*[:=]?\s*\S+/gi, "[redacted]")
-    .replace(/(?:sk|pk)_(?:test|live)_[A-Za-z0-9_-]+/g, "[redacted]")
-    .slice(0, 240);
   return {
     errorName: typeof value?.name === "string" ? value.name : "UnknownError",
     errorCode: typeof value?.code === "string" ? value.code : null,
-    safeMessage,
+    safeMessage: "Clerk authentication service failure",
   };
 }
 
@@ -183,9 +180,18 @@ async function ensureLocalProfile(
   // completion immediately after the trusted session is ready.
   const resolvedName = name && name.trim() !== "" ? name : "Member";
 
-  const rows = await db.execute<{ id: string }>(
-    sql`select app.upsert_local_user(${clerkUserId}, ${email}, ${resolvedName}) as id`,
-  );
+  let rows;
+  try {
+    rows = await db.execute<{ id: string }>(
+      sql`select app.upsert_local_user(${clerkUserId}, ${email}, ${resolvedName}) as id`,
+    );
+  } catch (error) {
+    console.error("[auth] local profile upsert failure", {
+      clerkSubjectPresent: true,
+      ...safeErrorDiagnostic(error),
+    });
+    throw new Error("Local profile provisioning failed");
+  }
   const id = rows.rows[0]?.id;
   if (!id) {
     console.error("[auth] local profile provisioning returned no user id", {
@@ -223,14 +229,16 @@ export async function isPlatformAdminSubject(
   return Boolean(rows.rows[0]?.ok);
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export async function getCurrentUser(request?: Request): Promise<CurrentUser | null> {
   const mode = authMode();
 
   // Production without Clerk credentials: refuse to authenticate anyone.
   if (mode === "unconfigured") return null;
 
   if (mode === "clerk") {
-    const subject = await resolveClerkSubject();
+    const subject = request
+      ? (await resolveRequestIdentity(request))?.clerkUserId ?? null
+      : await resolveClerkSubject();
     if (!subject) return null;
 
     const profile = await ensureLocalProfile(subject);

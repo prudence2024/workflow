@@ -5,10 +5,32 @@ export type ParsedSpreadsheet = {
   rows: Record<string, string>[];
 };
 
+export const STANDARD_IMPORT_COLUMNS = new Set([
+  "firstname", "first_name", "lastname", "last_name", "email", "phone",
+  "company", "organization", "organisation", "address",
+]);
+
 /** Stable, human-readable keys for columns that are not built-in contact fields. */
 export function customFieldKey(label: string, index = 0): string {
   const base = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || `custom_field_${index + 1}`;
   return base.startsWith("custom_") ? base : `custom_${base}`;
+}
+
+export type ImportedCustomField = { key: string; label: string; column: string };
+
+/** Stable custom-field descriptors for every non-contact spreadsheet column. */
+export function importedCustomFields(columns: string[], reservedKeys = new Set<string>()): ImportedCustomField[] {
+  const used = new Set(reservedKeys);
+  return columns.flatMap((column, index) => {
+    const normalized = column.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+    if (!normalized || STANDARD_IMPORT_COLUMNS.has(normalized)) return [];
+    const base = customFieldKey(column, index);
+    let key = base;
+    let suffix = 2;
+    while (used.has(key)) key = `${base}_${suffix++}`;
+    used.add(key);
+    return [{ key, label: column.trim() || `Custom field ${index + 1}`, column }];
+  });
 }
 
 export function parseSpreadsheet(buffer: Buffer, fileName: string): ParsedSpreadsheet {

@@ -1,4 +1,8 @@
-export type PostAuthRoute = "/login" | "/onboarding?step=workspace" | "/dashboard";
+export type PostAuthRoute =
+  | "/login"
+  | "/onboarding?step=workspace"
+  | "/profile-completion?next=/dashboard"
+  | "/dashboard";
 
 /**
  * The post-authentication decision is intentionally based on trusted server
@@ -14,9 +18,12 @@ export function resolvePostAuthRoute(input: {
   authenticated: boolean;
   hasPendingInvitation: boolean;
   hasWorkspace: boolean;
+  /** Existing workspace members may still need the profile-completion step. */
+  profileComplete?: boolean;
 }): PostAuthRoute {
   if (!input.authenticated) return "/login";
   if (input.hasPendingInvitation && !input.hasWorkspace) return "/onboarding?step=workspace";
   if (!input.hasWorkspace) return "/onboarding?step=workspace";
+  if (input.profileComplete === false) return "/profile-completion?next=/dashboard";
   return "/dashboard";
 }

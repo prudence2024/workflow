@@ -5,6 +5,7 @@ import { withTenant, type TenantTx } from "@/lib/tenant";
 import { identityOf, type CurrentUser, type OrgMembership } from "@/lib/auth";
 import { hasPermission } from "@/lib/authorization";
 import { timedRuntimeStage } from "@/lib/diagnostics";
+import { importedCustomFields } from "@/lib/spreadsheet";
 
 /**
  * Pending workspace invitations for a server-verified email address.
@@ -25,6 +26,19 @@ export async function pendingInvitationsForEmail(
      order by i.created_at desc
   `);
   return rows.rows.map((r) => ({ token: r.token, orgName: r.org_name, role: r.role }));
+}
+
+export async function hasPendingInvitationsForEmail(email: string): Promise<boolean> {
+  const rows = await db.execute<{ pending: boolean }>(sql`
+    select exists(
+      select 1
+        from public.organization_invitations i
+       where lower(i.email) = lower(${email})
+         and i.status = 'pending'
+         and i.expires_at > now()
+    ) as pending
+  `);
+  return Boolean(rows.rows[0]?.pending);
 }
 
 /**
@@ -237,6 +251,7 @@ export type FormOperationsCampaign = {
   mappedFields: number;
   successful: number;
   needsAttention: number;
+  stats: Record<string, number>;
   updatedAt: Date;
 };
 
@@ -277,9 +292,10 @@ export async function getFormOperationsOverview(workspace: Workspace): Promise<F
       mapped_fields: number;
       successful: number;
       needs_attention: number;
+      stats: Record<string, number> | null;
       updated_at: Date;
     }>(sql`
-      select c.id, c.name, c.status, c.form_url, c.updated_at,
+       select c.id, c.name, c.status, c.form_url, c.stats, c.updated_at,
              coalesce(jsonb_array_length(c.form_definition), 0)::int as total_fields,
              coalesce((
                select count(*)::int
@@ -314,7 +330,7 @@ export async function getFormOperationsOverview(workspace: Workspace): Promise<F
         from public.campaign_records r
         join public.contacts c on c.id = r.contact_id
         join public.campaigns k on k.id = r.campaign_id
-       where r.status in ('failed', 'human_action_required')
+        where r.status in ('failed', 'human_action_required', 'needs_attention', 'unverified')
        order by r.updated_at desc
        limit 25
     `);
@@ -338,6 +354,7 @@ export async function getFormOperationsOverview(workspace: Workspace): Promise<F
         mappedFields: r.mapped_fields,
         successful: r.successful,
         needsAttention: r.needs_attention,
+        stats: r.stats ?? {},
         updatedAt: r.updated_at,
       })),
       attention: attention.rows.map((r) => ({
@@ -955,6 +972,19 @@ export async function getCampaignDetail(
     const fields = await tx.execute<{ key: string; label: string }>(sql`
       select key, label from public.custom_field_definitions order by created_at limit 100
     `);
+    const importedColumns = await tx.execute<{ columns: string[] | null }>(sql`
+      select columns
+        from public.imports
+       where status in ('uploaded', 'validated', 'imported')
+       order by created_at desc
+       limit 25
+    `);
+    const customFieldOptions = new Map(fields.rows.map((field) => [field.key, field]));
+    for (const imported of importedColumns.rows) {
+      for (const field of importedCustomFields(imported.columns ?? [])) {
+        if (!customFieldOptions.has(field.key)) customFieldOptions.set(field.key, { key: field.key, label: field.label });
+      }
+    }
 
     const formDefinition = Array.isArray(c.form_definition) ? c.form_definition.slice(0, 100) : [];
     const fieldMapping = Object.fromEntries(Object.entries(c.field_mapping ?? {}).slice(0, 100));
@@ -988,7 +1018,7 @@ export async function getCampaignDetail(
        recordsPage,
        recordsPageSize,
       templates: templates.rows,
-      customFields: fields.rows,
+      customFields: [...customFieldOptions.values()],
     };
   }), { tenantScoped: true });
 }
@@ -1013,7 +1043,7 @@ export async function getCampaignStatus(
       select c.status, c.form_analysis_status, c.stats, c.updated_at,
              (select count(*)::int from public.campaign_records r
                where r.campaign_id = c.id
-                 and r.status in ('queued', 'retrying', 'processing')) as active_records
+                  and r.status in ('retrying', 'processing')) as active_records
         from public.campaigns c
        where c.id = ${campaignId}::uuid
        limit 1

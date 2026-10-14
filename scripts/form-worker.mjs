@@ -29,10 +29,16 @@ import { lookup as dnsLookup } from "node:dns";
 import { existsSync, readdirSync } from "node:fs";
 import { isIP } from "node:net";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { config } from "dotenv";
 import pg from "pg";
 import { chromium } from "playwright-core";
+import { safeBrowserError } from "./form-worker-diagnostics.mjs";
+import { isAllowedLocalFormRequest } from "./local-form-allowlist.mjs";
+import { runWorkerPreflight, workerDatabaseUrl } from "./worker-preflight.mjs";
+import { workerEnvironmentSummary, workerEvent } from "./worker-runtime-diagnostics.mjs";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -46,6 +52,7 @@ const has = (name) => args.includes(name);
 
 const RUN_ID = randomUUID().slice(0, 8);
 const MAX_ATTEMPTS = 3;
+let CURRENT_STAGE = "startup";
 
 if ((process.env.NEON_BRANCH ?? "").toLowerCase() === "production") {
   console.error("REFUSED: NEON_BRANCH=production. This worker is development-only in this milestone.");
@@ -68,11 +75,14 @@ function ipBlocked(ip) {
   return l === "::1" || l === "::" || l.startsWith("fe80:") || l.startsWith("fc") ||
     l.startsWith("fd") || l.startsWith("ff");
 }
-async function assertUrlAllowed(raw) {
+export async function assertUrlAllowed(raw, method = "GET") {
   const u = new URL(raw);
+  if (isAllowedLocalFormRequest(raw, method)) return u.toString();
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("only http(s) allowed");
   if (u.username || u.password) throw new Error("credentials in URL are not allowed");
-  const host = u.hostname.toLowerCase();
+  // DNS hostnames are equivalent with or without a trailing root dot. Strip
+  // it before internal-host checks so `localhost.` cannot bypass the policy.
+  const host = u.hostname.toLowerCase().replace(/\.+$/, "");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") ||
       host.endsWith(".local") || (!host.includes(".") && isIP(host) === 0)) {
     throw new Error("internal hostnames are not allowed");
@@ -86,7 +96,7 @@ async function assertUrlAllowed(raw) {
   return u.toString();
 }
 
-function resolveChromePath() {
+export function resolveChromePath() {
   if (process.env.PLAYWRIGHT_CHROME_PATH && existsSync(process.env.PLAYWRIGHT_CHROME_PATH)) {
     return process.env.PLAYWRIGHT_CHROME_PATH;
   }
@@ -101,11 +111,6 @@ function resolveChromePath() {
   }
   throw new Error("No Playwright Chromium found");
 }
-
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL,
-  max: 2,
-});
 
 async function requireWorkerAccess(client) {
   const access = await client.query(`
@@ -123,7 +128,7 @@ async function requireWorkerAccess(client) {
 }
 
 /** Claim one due record as the worker role. The claim IS the execution lock. */
-async function claimOne(client, campaignId) {
+export async function claimOne(client, campaignId, organizationId) {
   await client.query("begin");
   try {
     await client.query("set local role workflow_worker");
@@ -132,6 +137,8 @@ async function claimOne(client, campaignId) {
     if (campaignId) {
       params.push(campaignId);
       campaignFilter = `and r.campaign_id = $1::uuid`;
+      params.push(organizationId);
+      campaignFilter += ` and r.org_id = $2::uuid`;
     }
     const res = await client.query(
       `select r.id, r.org_id, r.campaign_id, r.contact_id, r.attempts, c.form_definition, o.plan_key
@@ -196,9 +203,9 @@ async function writeOutcome(client, rec, patch) {
          status = $2, failure_category = $3, result_message = $4,
          submission_evidence = coalesce($5::jsonb, submission_evidence),
          next_attempt_at = $6, updated_at = now()
-       where id = $1::uuid`,
+       where id = $1::uuid and org_id = $7::uuid`,
       [rec.id, patch.status, patch.failureCategory ?? null, patch.message,
-       patch.evidence ? JSON.stringify(patch.evidence) : null, patch.nextAttemptAt ?? null],
+       patch.evidence ? JSON.stringify(patch.evidence) : null, patch.nextAttemptAt ?? null, rec.org_id],
     );
     await client.query("commit");
   } catch (err) {
@@ -207,23 +214,23 @@ async function writeOutcome(client, rec, patch) {
   }
 }
 
-async function recompute(client, campaignId) {
+async function recompute(client, campaignId, organizationId) {
   await client.query("begin");
   try {
     await client.query("set local role workflow_worker");
     const rows = await client.query(
-      `select status, count(*)::int n from public.campaign_records where campaign_id = $1::uuid group by 1`,
-      [campaignId],
+      `select status, count(*)::int n from public.campaign_records where campaign_id = $1::uuid and org_id = $2::uuid group by 1`,
+      [campaignId, organizationId],
     );
     const stats = { total: 0 };
     for (const r of rows.rows) {
       stats[r.status] = r.n;
       stats.total += r.n;
     }
-    await client.query(`update public.campaigns set stats = $2::jsonb, updated_at = now() where id = $1::uuid`, [campaignId, JSON.stringify(stats)]);
+    await client.query(`update public.campaigns set stats = $3::jsonb, updated_at = now() where id = $1::uuid and org_id = $2::uuid`, [campaignId, organizationId, JSON.stringify(stats)]);
     const pending = (stats.queued ?? 0) + (stats.retrying ?? 0) + (stats.processing ?? 0);
     if (pending === 0) {
-      await client.query(`update public.campaigns set status = 'completed', updated_at = now() where id = $1::uuid and status = 'running'`, [campaignId]);
+      await client.query(`update public.campaigns set status = 'completed', updated_at = now() where id = $1::uuid and org_id = $2::uuid and status = 'running'`, [campaignId, organizationId]);
     }
     await client.query("commit");
     return stats;
@@ -276,12 +283,21 @@ function isPaidMultiPagePlan(planKey) {
 async function visibleSnapshot(page) {
   return page.evaluate(() => {
     const norm = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const normalizeQuestion = (value, index, requiredText) => {
+      const raw = norm(value).slice(0, 160);
+      const requiredSource = norm(requiredText || raw).slice(0, 160);
+      const label = raw.replace(/\bYour answer\b/gi, " ").replace(/\s*\*\s*/g, " ").replace(/\s+/g, " ").trim();
+      return { label: label.slice(0, 80) || `Question ${index + 1}`, required: /\*/.test(requiredSource) };
+    };
     const visible = (element) => { const style = getComputedStyle(element); return style.display !== "none" && style.visibility !== "hidden" && !element.hasAttribute("aria-hidden"); };
-    const items = Array.from(document.querySelectorAll('div[role="listitem"]')).filter(visible).map((li) => {
+    const items = Array.from(document.querySelectorAll('div[role="listitem"]')).filter(visible).map((li, index) => {
       const controls = Array.from(li.querySelectorAll("input, textarea, [role=radio], [role=checkbox], [role=listbox]"));
       const first = controls[0];
       const providerFieldId = controls.map((control) => control.getAttribute("name")).find((name) => name?.startsWith("entry.")) ?? null;
-      return { label: norm(li.textContent).replace(/\s*\*.*$/, "").slice(0, 120) || "Unnamed question", required: /\*/.test(norm(li.textContent).slice(0, 125)), type: first?.getAttribute("type") || first?.getAttribute("role") || (first?.tagName.toLowerCase() ?? "unknown"), providerFieldId, options: Array.from(li.querySelectorAll('[role=radio], [role=checkbox], [role=option]')).map((option) => norm(option.textContent || option.getAttribute("aria-label"))).filter(Boolean).slice(0, 50) };
+      const question = li.querySelector('[role="heading"], label');
+      const questionText = question?.getAttribute("aria-label") || question?.textContent || li.textContent || "";
+      const parsedQuestion = normalizeQuestion(questionText, index, li.textContent || "");
+      return { label: parsedQuestion.label, required: parsedQuestion.required, type: first?.getAttribute("type") || first?.getAttribute("role") || (first?.tagName.toLowerCase() ?? "unknown"), providerFieldId, options: Array.from(li.querySelectorAll('[role=radio], [role=checkbox], [role=option]')).map((option) => norm(option.textContent || option.getAttribute("aria-label"))).filter(Boolean).slice(0, 50) };
     });
     const controls = Array.from(document.querySelectorAll('[role=button], button')).filter(visible).map((element) => norm(element.textContent || element.getAttribute("aria-label"))).filter(Boolean);
     const sectionTitle = norm(document.querySelector('[role=heading], h1, h2, h3')?.textContent).slice(0, 120) || "Form section";
@@ -331,7 +347,7 @@ async function clickNavigation(page, kind) {
   }, kind);
 }
 
-async function processRecord(browser, job) {
+export async function processRecord(browser, job) {
   const { rec, campaign, contact } = job;
   const attemptId = `${RUN_ID}-a${rec.attempts + 1}`;
   if (isDynamicFormDefinition(campaign.form_definition) && !isPaidMultiPagePlan(campaign.plan_key)) {
@@ -346,7 +362,17 @@ async function processRecord(browser, job) {
   };
   if (!contact) return fail("Contact no longer exists — cannot submit.", "invalid_data");
   let formUrl;
-  try { formUrl = await assertUrlAllowed(campaign.form_url); } catch (err) { return fail(`Destination URL rejected by safety policy: ${err.message}`, "policy"); }
+  try { formUrl = await assertUrlAllowed(campaign.form_url); } catch (err) {
+    console.error(workerEvent("destination_policy_rejected", {
+      runId: RUN_ID,
+      campaignId: campaign.id,
+      recordId: rec.id,
+      stage: "before_browser_navigation",
+      category: "policy",
+      reason: safeBrowserError(err),
+    }));
+    return fail(`Destination URL rejected by safety policy: ${err.message}`, "policy");
+  }
   const fields = campaign.form_definition ?? [];
   const mapping = campaign.field_mapping ?? {};
   if (fields.length === 0) return fail("Campaign has no analyzed form definition — analyze the form first.", "config");
@@ -360,7 +386,7 @@ async function processRecord(browser, job) {
   }
 
   const page = await browser.newPage();
-  await page.route("**/*", async (route) => { try { await assertUrlAllowed(route.request().url()); await route.continue(); } catch { await route.abort(); } });
+  await page.route("**/*", async (route) => { try { await assertUrlAllowed(route.request().url(), route.request().method()); await route.continue(); } catch { await route.abort(); } });
   let finalSubmissionAttempted = false;
   const visited = new Set();
   const sectionPath = [];
@@ -404,13 +430,13 @@ async function processRecord(browser, job) {
     }
     return { status: "needs_attention", message: `Form exceeded the maximum of ${MAX_FORM_STEPS} sections; manual review is required.`, pagesVisited: MAX_FORM_STEPS, finalStep: MAX_FORM_STEPS - 1, sectionPath };
   } catch (err) {
-    const message = err.message ?? String(err);
+    const message = safeBrowserError(err);
     if (finalSubmissionAttempted) return { status: "needs_attention", message: `Submission outcome is ambiguous after the final attempt — manual review required: ${message.slice(0, 160)}` };
     if (/timeout|net::|navigation/i.test(message)) return fail(`Transient browser/network failure: ${message.slice(0, 160)}`, "network_failure", true);
     return { status: "needs_attention", message: `Unexpected worker error — parked for human review: ${message.slice(0, 160)}` };
   } finally { await page.close().catch(() => {}); }
 }
-function resolveChrome() {
+export function resolveChrome() {
   if (process.env.PLAYWRIGHT_CHROME_PATH && existsSync(process.env.PLAYWRIGHT_CHROME_PATH)) {
     return process.env.PLAYWRIGHT_CHROME_PATH;
   }
@@ -426,35 +452,61 @@ function resolveChrome() {
 }
 
 async function main() {
+  let stage = "startup";
+  const onlyRecord = flag("--record");
+  const onlyCampaign = flag("--campaign");
+  const recover = has("--recover");
   const client = new pg.Client({
-    connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL,
+    connectionString: workerDatabaseUrl(),
   });
   await client.connect();
   try {
+    stage = "database_access_check";
+    CURRENT_STAGE = stage;
     await requireWorkerAccess(client);
+    stage = "worker_preflight";
+    CURRENT_STAGE = stage;
+    const preflight = await runWorkerPreflight({
+      client,
+      campaignId: onlyCampaign,
+      recordId: onlyRecord,
+      recover,
+    });
+    console.log(workerEvent("preflight_passed", {
+      runId: RUN_ID,
+      campaignId: onlyCampaign ?? null,
+      mode: preflight.mode,
+      environment: workerEnvironmentSummary(),
+      identity: {
+        role: preflight.identity.role,
+        database: preflight.identity.database,
+        branchVerified: preflight.identity.branchVerified,
+      },
+      campaignStatus: preflight.campaignStatus ?? null,
+    }));
 
-    if (has("--recover")) {
+    if (recover) {
       const mins = Number(flag("--stale-min") ?? 15);
       const res = await client.query(
         `update public.campaign_records set status = 'needs_attention', result_message = 'Worker stopped while processing; external outcome is unknown. Review before any retry.', failure_category = 'ambiguous', updated_at = now()
           where status = 'processing' and last_attempt_at < now() - ($1 || ' minutes')::interval`,
         [String(mins)],
       );
-      console.log(`recovered ${res.rowCount} stale processing row(s) to queued.`);
+      console.log(`parked ${res.rowCount} stale processing row(s) in needs_attention for review.`);
       return;
     }
 
     const dry = has("--dry-run");
-    const onlyRecord = flag("--record");
-    const onlyCampaign = flag("--campaign");
     const limit = Number(flag("--limit") ?? (onlyRecord ? 1 : 10));
     let browser = null;
     try {
       let done = 0;
-      const touchedCampaigns = new Set();
+      const touchedCampaigns = new Map();
       for (;;) {
         if (done >= limit) break;
         let job = null;
+        stage = "claim";
+        CURRENT_STAGE = stage;
         if (onlyRecord && done === 0) {
           await client.query("begin");
           try {
@@ -491,10 +543,10 @@ async function main() {
             throw err;
           }
         } else if (!onlyRecord) {
-          job = await claimOne(client, onlyCampaign);
+          job = await claimOne(client, onlyCampaign, preflight.organizationId);
         }
         if (!job) break;
-        touchedCampaigns.add(job.rec.campaign_id);
+        touchedCampaigns.set(job.rec.campaign_id, job.rec.org_id);
         const blockedByPlan = isDynamicFormDefinition(job.campaign?.form_definition) && !isPaidMultiPagePlan(job.campaign?.plan_key);
         if (blockedByPlan) {
           const outcome = { status: "needs_attention", message: "Multi-page forms are available on Pro and Plus. No destination navigation was attempted.", failureCategory: "policy" };
@@ -519,15 +571,21 @@ async function main() {
           done += 1;
           continue;
         }
-        if (!browser) browser = await chromium.launch({ executablePath: resolveChrome() });
+        if (!browser) {
+          stage = "browser_launch";
+          CURRENT_STAGE = stage;
+          browser = await chromium.launch({ executablePath: resolveChrome() });
+        }
+        stage = "destination_execution";
+        CURRENT_STAGE = stage;
         const outcome = await processRecord(browser, job);
         await writeOutcome(client, job.rec, outcome);
         console.log(`${outcome.status}: record ${job.rec.id} — ${outcome.message.slice(0, 120)}`);
         done += 1;
       }
-      for (const cid of touchedCampaigns) {
+      for (const [cid, orgId] of touchedCampaigns) {
         if (!dry) {
-          const stats = await recompute(client, cid);
+          const stats = await recompute(client, cid, orgId);
           console.log(`campaign ${cid} stats: ${JSON.stringify(stats)}`);
         }
       }
@@ -536,12 +594,20 @@ async function main() {
       await browser?.close().catch(() => {});
     }
   } finally {
-    await pool.end().catch(() => {});
     await client.end().catch(() => {});
   }
 }
 
-main().catch((err) => {
-  console.error(`WORKER FAILED: ${err.message}`);
-  process.exitCode = 1;
-});
+const isDirectExecution = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectExecution) {
+  main().catch((err) => {
+    console.error(workerEvent("worker_failed", {
+      runId: RUN_ID,
+      stage: CURRENT_STAGE,
+      environment: workerEnvironmentSummary(),
+      error: safeBrowserError(err),
+    }));
+    console.error(`WORKER FAILED: ${safeBrowserError(err)}`);
+    process.exitCode = 1;
+  });
+}

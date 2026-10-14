@@ -7,14 +7,20 @@ function parseAuthorizedParties(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
     .map((origin) => origin.trim())
-    .filter((origin) => {
+    .map((origin) => {
       try {
         const url = new URL(origin);
-        return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password;
+        const isLocalDevelopmentHttp =
+          process.env.NODE_ENV !== "production" &&
+          url.protocol === "http:" &&
+          (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+        if ((!isLocalDevelopmentHttp && url.protocol !== "https:") || url.username || url.password) return null;
+        return url.origin;
       } catch {
-        return false;
+        return null;
       }
-    });
+    })
+    .filter((origin): origin is string => origin !== null);
 }
 
 function hasClerkSessionCookie(request: Request): boolean {
@@ -52,7 +58,7 @@ export default clerkMiddleware(
         console.error("[auth] Clerk proxy auth diagnostic failure", {
           errorName: typeof value?.name === "string" ? value.name : "UnknownError",
           errorCode: typeof value?.code === "string" ? value.code : null,
-          safeMessage: typeof value?.message === "string" ? value.message.slice(0, 200) : "unknown Clerk error",
+          safeMessage: "Clerk authentication resolution failed",
         });
       }
       const requestOrigin = safeRequestOrigin(request);

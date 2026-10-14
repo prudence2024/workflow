@@ -3,7 +3,7 @@
   "short_name": "Workflow",
   "description": "All your operations. In flow.",
   "id": "/",
-  "start_url": "/auth/complete?next=%2Fdashboard",
+  "start_url": "/app-entry",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
