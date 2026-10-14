@@ -26,6 +26,9 @@ export function validatePrequeueContact(
       const source = mapping[field.name];
       if (!source) return true;
       if (source.startsWith("custom__")) return !contact.customFields?.[source.slice("custom__".length)]?.trim();
+      if (source === "fullName" || source === "name") {
+        return `${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim().length === 0;
+      }
       const value = contact[source as keyof PrequeueContact];
       return typeof value !== "string" || value.trim().length === 0;
     })

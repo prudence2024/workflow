@@ -9,6 +9,8 @@ import { isIP } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "playwright-core";
+import { isAllowedLocalFormRequest } from "./local-form-allowlist.mjs";
+import { normalizeGoogleQuestionText } from "./google-question-label.mjs";
 
 const dnsLookupAsync = promisify(dnsLookup);
 function ipBlocked(ip) {
@@ -21,11 +23,12 @@ function ipBlocked(ip) {
   const l = ip.toLowerCase();
   return l === "::1" || l === "::" || l.startsWith("fe80:") || l.startsWith("fc") || l.startsWith("fd") || l.startsWith("ff");
 }
-async function assertUrlAllowed(raw) {
+async function assertUrlAllowed(raw, method = "GET") {
   const u = new URL(raw);
+  if (isAllowedLocalFormRequest(raw, method)) return u.toString();
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Only http(s) form URLs are allowed");
   if (u.username || u.password) throw new Error("Credentials in URL are not allowed");
-  const host = u.hostname.toLowerCase();
+  const host = u.hostname.toLowerCase().replace(/\.+$/, "");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host.endsWith(".local") || (!host.includes(".") && isIP(host) === 0)) throw new Error("Internal hostnames are not allowed");
   if (isIP(host) !== 0) { if (ipBlocked(host)) throw new Error("That address is not allowed for form analysis"); return u.toString(); }
   const addrs = (await dnsLookupAsync(host, { all: true })).map((r) => r.address);
@@ -44,12 +47,6 @@ function resolveChrome() {
   }
   throw new Error("No Playwright Chromium found (set PLAYWRIGHT_CHROME_PATH)");
 }
-function parseQuestionText(rawText, index) {
-  const text = rawText.replace(/\s+/g, " ").trim().slice(0, 120);
-  const label = text.replace(/\s*\*.*$/, "").trim() || `Question ${index + 1}`;
-  return { label: label.slice(0, 80), required: /\*/.test(text.slice(0, label.length + 3)) };
-}
-
 async function main() {
   const rawUrl = process.argv[2];
   if (!rawUrl) throw new Error("Usage: node scripts/analyze-form.mjs <form-url>");
@@ -58,15 +55,18 @@ async function main() {
   const browser = await chromium.launch({ executablePath: resolveChrome() });
   try {
     const page = await browser.newPage();
-    await page.route("**/*", async (route) => { try { await assertUrlAllowed(route.request().url()); await route.continue(); } catch { await route.abort(); } });
+    await page.route("**/*", async (route) => { try { await assertUrlAllowed(route.request().url(), route.request().method()); await route.continue(); } catch { await route.abort(); } });
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForSelector("form", { timeout: 20000 });
     await page.waitForTimeout(1800);
     const data = await page.evaluate(() => {
       const items = Array.from(document.querySelectorAll('div[role="listitem"]')).map((li) => {
         const first = li.querySelector('input, textarea, [role="radio"], [role="checkbox"], [role="listbox"]');
+        const question = li.querySelector('[role="heading"], label');
+        const questionText = question?.getAttribute("aria-label") || question?.textContent || li.textContent || "";
         return {
           text: (li.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120),
+          questionText: questionText.replace(/\s+/g, " ").trim().slice(0, 160),
           hasTextarea: Boolean(li.querySelector("textarea")),
           hasText: Boolean(li.querySelector('input[type="text"], input:not([type])')),
           hasChoice: li.querySelectorAll('[role="radio"]').length > 0 || li.querySelectorAll('[role="checkbox"]').length > 0,
@@ -89,7 +89,7 @@ async function main() {
     if (data.items.length === 0) diagnostics.push("No questions were detected in the rendered form. It may require sign-in, be closed, or use an unsupported layout.");
     if (data.hasNext && !data.hasSubmit) warnings.push("This is a dynamic-sections form; the submission worker will discover later pages at runtime.");
     const fields = data.items.map((item, index) => {
-      const { label, required } = parseQuestionText(item.text, index);
+      const { label, required } = normalizeGoogleQuestionText(item.questionText || item.text, index, item.text);
       const control = item.hasTextarea ? "textarea" : item.hasText ? (item.inputType || "text") : item.hasChoice ? (item.role === "checkbox" ? "checkbox" : "radio") : item.hasDropdown ? "select" : "unknown";
       const entryName = data.hiddenEntries[index] ?? undefined;
       const normalized = label.toLowerCase();

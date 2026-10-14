@@ -48,6 +48,9 @@ export default async function LoginPage({
           {/* routing="hash" renders the flow inline so /login keeps hosting it. */}
           <SignIn
             routing="hash"
+            signInUrl="/login"
+            signUpUrl="/signup"
+            appearance={{ elements: { logoBox: "hidden" } }}
             forceRedirectUrl={`/auth/complete?next=${encodeURIComponent("/dashboard")}`}
           />
         </div>

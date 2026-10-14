@@ -19,6 +19,28 @@ export const FORM_FETCH_TIMEOUT_MS = 10_000;
 export const FORM_FETCH_MAX_BYTES = 2_000_000;
 export const FORM_FETCH_MAX_REDIRECTS = 3;
 
+/**
+ * The local fixture is intentionally reachable only from the local Next
+ * development server. Production and hosted testing keep the normal SSRF
+ * policy, including the localhost/private-address rejection.
+ */
+export function isDevelopmentLocalTestForm(raw: string): boolean {
+  if (process.env.WORKFLOW_ALLOW_LOCAL_FORM_TEST !== "1" || process.env.NODE_ENV !== "development" || process.env.NEON_BRANCH?.toLowerCase() !== "development") return false;
+  try {
+    const parsed = new URL(raw);
+    return (
+      parsed.protocol === "http:" &&
+      parsed.hostname === "localhost" &&
+      parsed.port === "3000" &&
+      parsed.pathname === "/testing-form" &&
+      !parsed.search &&
+      !parsed.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 const METADATA_IPS = new Set(["169.254.169.254", "fd00:ec2::254", "100.100.100.200"]);
 
 function ipv4Blocked(num: number): boolean {
@@ -88,6 +110,7 @@ export async function assertFormUrlAllowed(raw: string): Promise<URL> {
   } catch {
     throw new Error("Enter a valid, authorized form URL starting with http(s)://");
   }
+  if (isDevelopmentLocalTestForm(raw)) return parsed;
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Only http(s) form URLs are allowed");
   }

@@ -103,11 +103,15 @@ export async function analyzeGoogleForm(rawUrl: string): Promise<AnalyzedForm> {
 export function parseGoogleQuestionText(
   rawText: string,
   index: number,
+  requiredText = rawText,
 ): { label: string; required: boolean } {
-  const text = rawText.replace(/\s+/g, " ").trim().slice(0, 120);
-  const label = text.replace(/\s*\*.*$/, "").trim() || `Question ${index + 1}`;
-  const required = /\*/.test(text.slice(0, label.length + 3));
-  return { label: label.slice(0, 80), required };
+  const text = rawText.replace(/\s+/g, " ").trim().slice(0, 160);
+  const label = text
+    .replace(/\bYour answer\b/gi, " ")
+    .replace(/\s*\*\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || `Question ${index + 1}`;
+  return { label: label.slice(0, 80), required: /\*/.test(requiredText.replace(/\s+/g, " ").trim().slice(0, 160)) };
 }
 
 // ---------------------------------------------------------------------------

@@ -45,24 +45,41 @@ export async function recomputeCampaignStats(orgId: string, campaignId: string) 
 }
 
 export async function resetFailedRecords(orgId: string, campaignId: string) {
-  const ids = await db
-    .select({ id: campaignRecords.id })
-    .from(campaignRecords)
-    .where(and(eq(campaignRecords.orgId, orgId), eq(campaignRecords.campaignId, campaignId), eq(campaignRecords.status, "failed")));
-  if (ids.length === 0) return 0;
-  await db
-    .update(campaignRecords)
-    .set({ status: "queued", failureCategory: null, resultMessage: "Manually requeued for retry." })
-    .where(
-      and(
-        eq(campaignRecords.campaignId, campaignId),
-        inArray(
-          campaignRecords.id,
-          ids.map((i) => i.id),
+  return db.transaction(async (tx) => {
+    const ids = await tx
+      .select({ id: campaignRecords.id })
+      .from(campaignRecords)
+      .where(and(eq(campaignRecords.orgId, orgId), eq(campaignRecords.campaignId, campaignId), eq(campaignRecords.status, "failed")));
+    if (ids.length === 0) return 0;
+    await tx
+      .update(campaignRecords)
+      .set({ status: "queued", failureCategory: null, resultMessage: "Manually requeued for retry." })
+      .where(
+        and(
+          eq(campaignRecords.orgId, orgId),
+          eq(campaignRecords.campaignId, campaignId),
+          inArray(
+            campaignRecords.id,
+            ids.map((i) => i.id),
+          ),
         ),
-      ),
-    );
-  return ids.length;
+      );
+
+    // A completed/failed lifecycle with queued records is stale: the next run
+    // must be explicitly queued again, and the worker only claims running
+    // campaigns. Never change an active run here.
+    await tx
+      .update(campaigns)
+      .set({ status: "ready", audienceSnapshotId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(campaigns.id, campaignId),
+          eq(campaigns.orgId, orgId),
+          inArray(campaigns.status, ["completed", "failed"]),
+        ),
+      );
+    return ids.length;
+  });
 }
 
 /** Park an ambiguous record for human review — never auto-retried, never successful. */

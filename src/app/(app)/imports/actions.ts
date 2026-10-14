@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { activityEvents, contactImports, contacts, customFieldDefinitions, files, importErrors, imports } from "@/db/schema";
 import { getCurrentOrg, getCurrentUser } from "@/lib/auth";
 import { inWorkspace } from "@/lib/data";
-import { customFieldKey, parseSpreadsheet } from "@/lib/spreadsheet";
+import { importedCustomFields, parseSpreadsheet } from "@/lib/spreadsheet";
 import { saveBuffer } from "@/lib/storage";
 import { normalizeEmail, normalizePhone, validateContactRow } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
@@ -14,7 +14,6 @@ import { incrementUsage } from "@/lib/usage";
 import { assertPlanLimit } from "@/lib/planLimits";
 
 const CONTACT_FIELDS = ["firstName", "lastName", "email", "phone", "company", "address"] as const;
-const STANDARD_COLUMNS = new Set(["firstname", "first_name", "lastname", "last_name", "email", "phone", "company", "organization", "organisation", "address"]);
 
 async function requireOrgContext() {
   const user = await getCurrentUser();
@@ -73,15 +72,17 @@ export async function uploadImportAction(formData: FormData) {
     // Preserve every non-standard spreadsheet column as a workspace field.
     // The import preview on the next step exposes these definitions for mapping;
     // no customer data is silently discarded.
-    const existing = await tx.select({ key: customFieldDefinitions.key }).from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
+    const existing = await tx.select({ key: customFieldDefinitions.key, label: customFieldDefinitions.label }).from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
     const existingKeys = new Set(existing.map((field) => field.key));
-    for (const [index, column] of columns.entries()) {
-      const normalized = column.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
-      if (!normalized || STANDARD_COLUMNS.has(normalized)) continue;
-      let key = customFieldKey(column, index);
-      let suffix = 2;
-      while (existingKeys.has(key)) key = `${customFieldKey(column, index)}_${suffix++}`;
-      await tx.insert(customFieldDefinitions).values({ orgId: org.orgId, key, label: column.trim() || `Custom field ${index + 1}`, fieldType: "text" }).onConflictDoNothing();
+    const generatedCustomFields = importedCustomFields(columns, existingKeys);
+    const existingByLabel = new Map(existing.map((field) => [field.label.trim().toLowerCase(), field.key]));
+    const customFields = generatedCustomFields.map((field) => ({
+      ...field,
+      key: existingByLabel.get(field.label.trim().toLowerCase()) ?? field.key,
+    }));
+    for (const field of customFields) {
+      const { key, label } = field;
+      await tx.insert(customFieldDefinitions).values({ orgId: org.orgId, key, label, fieldType: "text" }).onConflictDoNothing();
       existingKeys.add(key);
     }
     const [created] = await tx
@@ -95,6 +96,7 @@ export async function uploadImportAction(formData: FormData) {
         columns,
         rows,
         status: "uploaded",
+        mapping: Object.fromEntries(customFields.map((field) => [`custom__${field.key}`, field.column])),
       })
       .returning();
     await tx.insert(files).values({
@@ -205,6 +207,13 @@ export async function commitImportAction(formData: FormData) {
 
     const rows = (record.rows as Record<string, string>[]) ?? [];
     const mapping = (record.mapping as Record<string, string>) ?? {};
+    const definitions = await tx.select({ key: customFieldDefinitions.key, label: customFieldDefinitions.label }).from(customFieldDefinitions).where(eq(customFieldDefinitions.orgId, org.orgId));
+    const existingKeys = new Set(definitions.map((field) => field.key));
+    const existingByLabel = new Map(definitions.map((field) => [field.label.trim().toLowerCase(), field.key]));
+    const autoCustomFields = importedCustomFields(record.columns ?? [], existingKeys).map((field) => ({
+      ...field,
+      key: existingByLabel.get(field.label.trim().toLowerCase()) ?? field.key,
+    }));
     const errorRowsRes = await tx.select({ rowNumber: importErrors.rowNumber }).from(importErrors).where(eq(importErrors.importId, importId));
     const invalidRowNumbers = new Set(errorRowsRes.map((e) => e.rowNumber));
 
@@ -241,9 +250,14 @@ export async function commitImportAction(formData: FormData) {
       }
 
       const customFields: Record<string, string> = {};
+      for (const field of autoCustomFields) {
+        const mapKey = `custom__${field.key}`;
+        const column = mapping[mapKey] ?? field.column;
+        customFields[field.key] = row[column] ?? "";
+      }
       for (const [mapKey, column] of Object.entries(mapping)) {
-        if (mapKey.startsWith("custom__")) {
-          customFields[mapKey.replace("custom__", "")] = row[column] ?? "";
+        if (mapKey.startsWith("custom__") && !(mapKey.slice("custom__".length) in customFields)) {
+          customFields[mapKey.slice("custom__".length)] = row[column] ?? "";
         }
       }
 

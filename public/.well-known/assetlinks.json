@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.workflow.twa.experiment",
+      "sha256_cert_fingerprints": [
+        "EF:A7:4C:EC:85:96:40:8E:18:4A:E5:96:36:F6:A6:6A:1B:84:62:09:21:87:5A:B7:58:F0:19:8A:AD:93:F3:99"
+      ]
+    }
+  }
+]

@@ -7,6 +7,7 @@ import { Stat, TD, TH, THead, TR, Table, ProgressBar } from "@/components/ui/Dat
 import { StatusPill } from "@/components/ui/Status";
 import { LinkButton } from "@/components/ui/Button";
 import { formatDateTime, pct, timeAgo } from "@/lib/utils";
+import { campaignPresentation } from "@/lib/campaignStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -96,11 +97,14 @@ export default async function FormOperationsPage() {
               <TH>Successful</TH>
               <TH>Needs attention</TH>
               <TH>Updated</TH>
+              <TH>Outcome</TH>
               <TH>{""}</TH>
             </THead>
             <tbody>
               {overview.campaigns.map((c) => (
-                <TR key={c.id}>
+                (() => {
+                  const presentation = campaignPresentation(c.status, c.stats);
+                  return <TR key={c.id}>
                   <TD className="max-w-[280px]">
                     <Link href={`/campaigns/${c.id}`} className="font-medium text-[var(--color-ink)] hover:text-[var(--color-brand)]">
                       {c.name}
@@ -108,7 +112,7 @@ export default async function FormOperationsPage() {
                     <p className="max-w-[260px] truncate text-[11.5px] text-[var(--color-muted)]">{c.formUrl}</p>
                   </TD>
                   <TD>
-                    <StatusPill status={c.status} />
+                    <StatusPill status={presentation.key} label={presentation.label} />
                   </TD>
                   <TD className="font-mono-data">{c.totalFields}</TD>
                   <TD className="min-w-[120px]">
@@ -129,12 +133,14 @@ export default async function FormOperationsPage() {
                     {c.needsAttention}
                   </TD>
                   <TD className="whitespace-nowrap text-[var(--color-muted)]">{formatDateTime(c.updatedAt)}</TD>
+                  <TD className="max-w-[260px] text-[12px] text-[var(--color-muted)]">{presentation.message}</TD>
                   <TD>
                     <LinkButton href={`/campaigns/${c.id}`} variant="ghost" size="sm">
                       Open
                     </LinkButton>
                   </TD>
-                </TR>
+                  </TR>;
+                })()
               ))}
             </tbody>
           </Table>

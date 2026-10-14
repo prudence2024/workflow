@@ -31,6 +31,7 @@ export async function GET() {
       authenticated: true,
       hasPendingInvitation: pendingInvitations.length > 0,
       hasWorkspace: organizations.length > 0,
+      profileComplete: user.profileComplete,
     });
     return Response.json(
       { authenticated: true, userReady: true, destination },

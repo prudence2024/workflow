@@ -24,7 +24,7 @@ describe("PWA and Android preparation", () => {
     expect(manifest.name).toBe("Workflow");
     expect(manifest.short_name).toBe("Workflow");
     expect(manifest.display).toBe("standalone");
-    expect(manifest.start_url).toContain("/auth/complete");
+    expect(manifest.start_url).toBe("/app-entry");
     expect(manifest.theme_color).toBe("#0B1F3B");
     expect(manifest.background_color).toBe(manifest.theme_color);
     expect(manifest.icons).toEqual(expect.arrayContaining([
@@ -58,6 +58,13 @@ describe("PWA and Android preparation", () => {
     expect(serviceWorker).toContain("url.searchParams.has(\"_rsc\")");
     expect(serviceWorker).toContain("request.headers.has(\"Next-Action\")");
     expect(serviceWorker).toContain("url.pathname.startsWith(\"/api/\")");
+  });
+
+  it("handles restricted browser storage without breaking the install prompt", () => {
+    const runtime = readFileSync(resolve(root, "src/components/pwa/PwaRuntime.tsx"), "utf8");
+    expect(runtime).toContain("Storage can be unavailable in private or restricted browser contexts.");
+    expect(runtime).toContain("function rememberDismissal");
+    expect(runtime).toContain("window.localStorage.setItem");
   });
 
   it("points the native wrapper at Netlify rather than Cloudflare", () => {

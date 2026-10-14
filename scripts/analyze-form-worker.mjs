@@ -8,7 +8,7 @@
  *
  * Usage:
  *   node scripts/analyze-form-worker.mjs --once
- *   node scripts/analyze-form-worker.mjs --limit 10
+ *   node scripts/analyze-form-worker.mjs --limit 10 [--campaign <uuid> | --analysis-job <uuid>]
  *   node scripts/analyze-form-worker.mjs --recover --stale-min 15
  */
 import { execFile } from "node:child_process";
@@ -16,7 +16,9 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import pg from "pg";
+import { buildAnalysisClaimQuery } from "./form-analysis-claim.mjs";
 import { safeBrowserError } from "./form-worker-diagnostics.mjs";
+import { runWorkerPreflight, workerDatabaseUrl } from "./worker-preflight.mjs";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -33,10 +35,12 @@ const flag = (name) => {
   return i === -1 ? null : (args[i + 1] ?? null);
 };
 const limit = Math.max(1, Math.min(Number(flag("--limit") ?? (has("--once") ? 1 : 10)), 50));
+const campaignId = flag("--campaign");
+const analysisJobId = flag("--analysis-job");
 const workerRunId = randomUUID();
 const staleMinutes = Math.max(5, Number(flag("--stale-min") ?? 15));
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL,
+  connectionString: workerDatabaseUrl(),
   max: 2,
 });
 
@@ -59,20 +63,12 @@ function inferMapping(fields) {
   return mapping;
 }
 
-async function claimOne(client) {
+async function claimOne(client, organizationId) {
   await client.query("begin");
   try {
     await client.query("set local role workflow_worker");
-    const result = await client.query(
-      `select j.id, j.org_id, j.campaign_id, j.form_url, j.attempts, j.max_attempts, o.plan_key
-         from public.form_analysis_jobs j
-         join public.organizations o on o.id = j.org_id
-        where j.status = 'queued'
-          and j.next_attempt_at <= now()
-        order by j.created_at
-        limit 1
-        for update of j skip locked`,
-    );
+    const claim = buildAnalysisClaimQuery({ campaignId, analysisJobId, organizationId });
+    const result = await client.query(claim.text, claim.values);
     if (result.rows.length === 0) {
       await client.query("rollback");
       return null;
@@ -86,9 +82,9 @@ async function claimOne(client) {
               locked_by = $2,
               started_at = coalesce(started_at, now()),
               updated_at = now()
-        where id = $1::uuid
+        where id = $1::uuid and org_id = $3::uuid
         returning id, org_id, campaign_id, form_url, attempts, max_attempts`,
-      [job.id, workerRunId],
+      [job.id, workerRunId, job.org_id],
     );
     await client.query("commit");
     return updated.rows[0];
@@ -154,8 +150,8 @@ async function finish(client, job, outcome) {
               locked_by = null,
               updated_at = now(),
               next_attempt_at = case when $2 = 'queued' then now() + ($6::int * interval '1 second') else next_attempt_at end
-        where id = $1::uuid`,
-      [job.id, outcome.status, outcome.error ?? null, JSON.stringify(outcome.diagnostics ?? []), JSON.stringify(outcome.result ?? {}), outcome.backoffSeconds ?? 0],
+        where id = $1::uuid and org_id = $7::uuid`,
+      [job.id, outcome.status, outcome.error ?? null, JSON.stringify(outcome.diagnostics ?? []), JSON.stringify(outcome.result ?? {}), outcome.backoffSeconds ?? 0, job.org_id],
     );
 
     const campaignStatus =
@@ -171,8 +167,8 @@ async function finish(client, job, outcome) {
               form_analysis_error = $6,
               form_analysis_updated_at = now(),
               updated_at = now()
-        where id = $1::uuid`,
-      [job.campaign_id, job.form_url, campaignStatus, JSON.stringify(outcome.fields ?? []), JSON.stringify(outcome.mapping ?? {}), outcome.error ?? null],
+        where id = $1::uuid and org_id = $7::uuid`,
+      [job.campaign_id, job.form_url, campaignStatus, JSON.stringify(outcome.fields ?? []), JSON.stringify(outcome.mapping ?? {}), outcome.error ?? null, job.org_id],
     );
     await client.query("commit");
   } catch (error) {
@@ -233,13 +229,20 @@ async function processJob(client, job) {
 async function main() {
   const client = await pool.connect();
   try {
+    const preflight = await runWorkerPreflight({
+      client,
+      campaignId,
+      recordId: null,
+      recover: has("--recover"),
+    });
+    console.log(`analysis worker preflight passed: ${preflight.mode} scope verified`);
     if (has("--recover")) {
       const recovered = await recoverStale(client);
       console.log(`recovered=${recovered}`);
     }
     let processed = 0;
     for (; processed < limit; processed += 1) {
-      const job = await claimOne(client);
+      const job = await claimOne(client, preflight.organizationId);
       if (!job) break;
       await processJob(client, job);
       console.log(`analysis job processed: ${job.id}`);

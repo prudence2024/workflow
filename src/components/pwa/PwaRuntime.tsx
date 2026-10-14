@@ -22,8 +22,23 @@ function isIos(): boolean {
 }
 
 function wasRecentlyDismissed(): boolean {
-  const dismissedAt = Number(window.localStorage.getItem(DISMISS_KEY) ?? 0);
+  let stored: string | null = null;
+  try {
+    stored = window.localStorage.getItem(DISMISS_KEY);
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+    return false;
+  }
+  const dismissedAt = Number(stored ?? 0);
   return Number.isFinite(dismissedAt) && Date.now() - dismissedAt < DISMISS_COOLDOWN_MS;
+}
+
+function rememberDismissal(): void {
+  try {
+    window.localStorage.setItem(DISMISS_KEY, String(Date.now()));
+  } catch {
+    // Dismissal persistence is optional; the prompt can reappear next visit.
+  }
 }
 
 export function PwaRuntime() {
@@ -63,7 +78,7 @@ export function PwaRuntime() {
   }
 
   function dismiss() {
-    window.localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    rememberDismissal();
     setDismissed(true);
     setShowIosGuidance(false);
     setInstallEvent(null);
