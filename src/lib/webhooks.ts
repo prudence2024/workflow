@@ -92,15 +92,35 @@ export function verifySharedSecret(
   return constantTimeEqual(provided, expected);
 }
 
+/** Paystack signs the exact raw request body with HMAC-SHA512. */
+export function verifyPaystackSignature(
+  rawBody: string,
+  provided: string | null,
+  secret: string | undefined,
+): boolean {
+  if (!secret || secret.trim() === "" || !provided) return false;
+  const expected = crypto.createHmac("sha512", secret).update(rawBody).digest("hex");
+  return constantTimeEqual(expected, provided.trim().toLowerCase());
+}
+
 // ---------------------------------------------------------------------------
 // Idempotent recording
 // ---------------------------------------------------------------------------
 
-export type RecordedWebhook = { duplicate: boolean; id: string | null };
+export type RecordedWebhook = {
+  duplicate: boolean;
+  id: string | null;
+  /** Provider retries may re-enter only after a prior processing failure. */
+  retryable: boolean;
+};
+
+export function isRetryableWebhookStatus(status: string | null | undefined): boolean {
+  return status === "failed";
+}
 
 /** Record a provider delivery. A repeated (provider, event_id) is a duplicate. */
 export async function recordWebhookEvent(params: {
-  provider: "resend" | "termii" | "telegram";
+  provider: "resend" | "termii" | "telegram" | "paystack";
   eventId: string;
   eventType?: string | null;
   signatureValid: boolean;
@@ -119,12 +139,16 @@ export async function recordWebhookEvent(params: {
     returning id
   `);
 
-  if (res.rows.length > 0) return { duplicate: false, id: res.rows[0].id };
+  if (res.rows.length > 0) return { duplicate: false, id: res.rows[0].id, retryable: false };
 
-  const existing = await db.execute<{ id: string }>(sql`
-    select id from public.webhook_events where provider = ${params.provider} and event_id = ${params.eventId}
+  const existing = await db.execute<{ id: string; status: string }>(sql`
+    select id, status from public.webhook_events where provider = ${params.provider} and event_id = ${params.eventId}
   `);
-  return { duplicate: true, id: existing.rows[0]?.id ?? null };
+  return {
+    duplicate: true,
+    id: existing.rows[0]?.id ?? null,
+    retryable: isRetryableWebhookStatus(existing.rows[0]?.status),
+  };
 }
 
 export async function markWebhookProcessed(
@@ -150,12 +174,36 @@ export async function recordMessageEvent(params: {
   rawMetadata?: Record<string, unknown>;
 }): Promise<void> {
   if (params.providerEventId) {
-    const dupe = await db.execute<{ id: string }>(sql`
-      select id from public.message_events
-       where provider = ${params.provider} and provider_event_id = ${params.providerEventId}
-       limit 1
-    `);
-    if (dupe.rows.length > 0) return;
+    // The current schema intentionally does not require a migration-level
+    // unique constraint for provider evidence. Serialize the check/insert for
+    // this provider event instead, so concurrent webhook deliveries cannot
+    // both observe the row as absent and create duplicate evidence.
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        select pg_advisory_xact_lock(hashtext(${`${params.provider}:${params.providerEventId}`}))
+      `);
+      const dupe = await tx.execute<{ id: string }>(sql`
+        select id from public.message_events
+         where provider = ${params.provider} and provider_event_id = ${params.providerEventId}
+         limit 1
+      `);
+      if (dupe.rows.length > 0) return;
+
+      await tx.execute(sql`
+        insert into public.message_events
+          (org_id, message_id, provider, provider_event_id, status, detail, raw_metadata)
+        values (
+          ${params.orgId}::uuid,
+          ${params.messageId}::uuid,
+          ${params.provider},
+          ${params.providerEventId},
+          ${params.status},
+          ${params.detail ?? null},
+          ${JSON.stringify(params.rawMetadata ?? {})}::jsonb
+        )
+      `);
+    });
+    return;
   }
 
   await db.execute(sql`

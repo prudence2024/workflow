@@ -35,6 +35,7 @@ import { promisify } from "node:util";
 import { config } from "dotenv";
 import pg from "pg";
 import { chromium } from "playwright-core";
+import { buildSubmissionValues } from "./form-worker-payload.mjs";
 import { safeBrowserError } from "./form-worker-diagnostics.mjs";
 import { isAllowedLocalFormRequest } from "./local-form-allowlist.mjs";
 import { runWorkerPreflight, workerDatabaseUrl } from "./worker-preflight.mjs";
@@ -241,20 +242,6 @@ async function recompute(client, campaignId, organizationId) {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-function contactValue(contact, column) {
-  if (!column) return "";
-  if (column.startsWith("custom__")) {
-    const key = column.slice("custom__".length);
-    return String(contact?.custom_fields?.[key] ?? "");
-  }
-  const map = { firstName: "first_name", lastName: "last_name", email: "email", phone: "phone", company: "company", address: "address" };
-  const direct = map[column] ?? column;
-  if (contact && direct in contact) return String(contact[direct] ?? "");
-  if (column === "name" || column === "fullName") {
-    return `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim();
-  }
-  return String(contact?.[column] ?? "");
-}
 
 async function detectChallenge(page) {
   return page.evaluate(() => {
@@ -286,7 +273,7 @@ async function visibleSnapshot(page) {
     const normalizeQuestion = (value, index, requiredText) => {
       const raw = norm(value).slice(0, 160);
       const requiredSource = norm(requiredText || raw).slice(0, 160);
-      const label = raw.replace(/\bYour answer\b/gi, " ").replace(/\s*\*\s*/g, " ").replace(/\s+/g, " ").trim();
+      const label = raw.replace(/\s*\*?\s*Your answer\s*$/i, "").replace(/\s*\*\s*$/, "").replace(/\s+/g, " ").trim();
       return { label: label.slice(0, 80) || `Question ${index + 1}`, required: /\*/.test(requiredSource) };
     };
     const visible = (element) => { const style = getComputedStyle(element); return style.display !== "none" && style.visibility !== "hidden" && !element.hasAttribute("aria-hidden"); };
@@ -295,7 +282,13 @@ async function visibleSnapshot(page) {
       const first = controls[0];
       const providerFieldId = controls.map((control) => control.getAttribute("name")).find((name) => name?.startsWith("entry.")) ?? null;
       const question = li.querySelector('[role="heading"], label');
-      const questionText = question?.getAttribute("aria-label") || question?.textContent || li.textContent || "";
+      let questionText = question?.getAttribute("aria-label") || "";
+      if (!questionText && question) {
+        const clone = question.cloneNode(true);
+        clone.querySelectorAll('[aria-hidden="true"], [role="note"], [data-tooltip]').forEach((node) => node.remove());
+        questionText = clone.textContent || "";
+      }
+      if (!questionText) questionText = question?.textContent || li.textContent || "";
       const parsedQuestion = normalizeQuestion(questionText, index, li.textContent || "");
       return { label: parsedQuestion.label, required: parsedQuestion.required, type: first?.getAttribute("type") || first?.getAttribute("role") || (first?.tagName.toLowerCase() ?? "unknown"), providerFieldId, options: Array.from(li.querySelectorAll('[role=radio], [role=checkbox], [role=option]')).map((option) => norm(option.textContent || option.getAttribute("aria-label"))).filter(Boolean).slice(0, 50) };
     });
@@ -304,10 +297,6 @@ async function visibleSnapshot(page) {
     const body = norm(document.body?.innerText).slice(0, 5000);
     return { items, hasNext: controls.some((text) => /^(next|continue|proceed|go to next)$/i.test(text)), hasSubmit: controls.some((text) => /^(submit|send|finish|complete)$/i.test(text)), sectionTitle, pageSignature: `${location.href}|${sectionTitle}|${items.map((item) => `${item.providerFieldId ?? item.label}:${item.type}`).join("|")}`.slice(0, 800), challenge: /captcha|recaptcha|verify you are human|one[- ]time password|\botp\b|sign in to continue/i.test(body) || Boolean(document.querySelector('iframe[src*="recaptcha"], [aria-label*="CAPTCHA" i]')) };
   });
-}
-
-function mappingForField(field, mapping) {
-  return mapping[field.name] ?? mapping[field.providerFieldId] ?? mapping[field.label] ?? mapping[field.label?.toLowerCase()];
 }
 
 async function fillVisibleField(page, field, value) {
@@ -376,13 +365,11 @@ export async function processRecord(browser, job) {
   const fields = campaign.form_definition ?? [];
   const mapping = campaign.field_mapping ?? {};
   if (fields.length === 0) return fail("Campaign has no analyzed form definition — analyze the form first.", "config");
-  const values = {};
+  const { values, missing } = buildSubmissionValues(fields, mapping, contact);
+  if (missing.length > 0) return fail(`Required field '${missing[0]}' has no mapped contact value.`, "validation");
   for (const field of fields) {
-    const column = mappingForField(field, mapping);
-    const value = column ? contactValue(contact, column).trim() : "";
-    if (field.required && !value && (field.pageIndex ?? 0) === 0) return fail(`Required field '${field.label}' has no mapped contact value.`, "validation");
+    const value = values[field.name] ?? "";
     if (field.type === "email" && value && !EMAIL_RE.test(value)) return fail(`Invalid email for '${field.label}'.`, "validation");
-    if (value) values[field.name] = value;
   }
 
   const page = await browser.newPage();

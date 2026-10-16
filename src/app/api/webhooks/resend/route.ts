@@ -7,6 +7,8 @@ import {
   recordWebhookEvent,
   verifyResendSignature,
 } from "@/lib/webhooks";
+import { safeErrorDiagnostic } from "@/lib/diagnostics";
+import { readWebhookBody, WebhookBodyTooLargeError } from "@/lib/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +24,11 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 export async function POST(request: Request) {
   let rawBody: string;
   try {
-    rawBody = await request.text();
-  } catch {
+    rawBody = await readWebhookBody(request);
+  } catch (error) {
+    if (error instanceof WebhookBodyTooLargeError) {
+      return new Response(JSON.stringify({ error: "payload too large" }), { status: 413, headers: JSON_HEADERS });
+    }
     return new Response(JSON.stringify({ error: "cannot read body" }), {
       status: 400,
       headers: JSON_HEADERS,
@@ -74,7 +79,7 @@ export async function POST(request: Request) {
     });
   }
 
-  if (recorded.duplicate) {
+  if (recorded.duplicate && !recorded.retryable) {
     return new Response(JSON.stringify({ ok: true, duplicate: true }), { headers: JSON_HEADERS });
   }
 
@@ -87,7 +92,8 @@ export async function POST(request: Request) {
           await tx.execute(sql`set local role workflow_worker`);
           const res = await tx.execute<{ id: string; org_id: string }>(sql`
             select id, org_id from public.messages
-             where provider_message_id = ${providerMessageId}
+             where provider = 'resend'
+               and provider_message_id = ${providerMessageId}
              limit 1
           `);
           return res.rows[0] ?? null;
@@ -129,11 +135,7 @@ export async function POST(request: Request) {
     await markWebhookProcessed(recorded.id!, "processed");
     return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
   } catch (err) {
-    await markWebhookProcessed(
-      recorded.id!,
-      "failed",
-      err instanceof Error ? err.message : "processing_error",
-    );
+    await markWebhookProcessed(recorded.id!, "failed", safeErrorDiagnostic(err).safeMessage);
     // 500 lets the provider retry; the (provider, event_id) dedupe makes that safe.
     return new Response(JSON.stringify({ error: "processing failed" }), {
       status: 500,
