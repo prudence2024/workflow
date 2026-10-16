@@ -57,7 +57,7 @@ describe("Workflow splash integration", () => {
     expect(gate).toContain('"v1"');
     expect(gate).toContain("useSyncExternalStore");
     expect(gate).toContain("window.localStorage");
-    expect(gate).toContain("RETURN_VISIT_PLAYBACK_SPEED = 8");
+    expect(gate).toContain("RETURN_VISIT_PLAYBACK_SPEED = 2.5");
     expect(gate).toContain("markSplashSeen();");
     expect(gate).toContain('reason !== "failsafe"');
     expect(gate).toContain("catch");

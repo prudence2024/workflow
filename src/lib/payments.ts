@@ -175,23 +175,34 @@ export async function convergeVerifiedPayment(input: {
   paymentMethod: string | null;
 }): Promise<PaymentRow> {
   return db.transaction(async (tx) => {
-    const locked = await tx.execute<PaymentRow>(sql`select * from public.payments where id = ${input.paymentId}::uuid for update`);
-    const payment = locked.rows[0];
+    const locked = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.id, input.paymentId))
+      .limit(1)
+      .for("update");
+    const payment = locked[0];
     if (!payment) throw new PaymentVerificationError("Payment record not found");
     if (payment.status === "verified") return payment;
     if (payment.status !== "pending") throw new PaymentVerificationError("Payment is not pending");
+    await lockProviderTransaction(tx, "paystack", input.providerTransactionId);
     await assertProviderTransactionAvailable(tx, payment.id, input.providerTransactionId);
 
     const receiptNumber = `WF-${payment.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
-    const updated = await tx.execute<PaymentRow>(sql`
-      update public.payments
-         set status = 'verified', provider_transaction_id = ${input.providerTransactionId},
-             payment_method_summary = ${input.paymentMethod}, paid_at = ${input.paidAt},
-             verified_at = now(), receipt_number = ${receiptNumber}, updated_at = now()
-       where id = ${payment.id}::uuid and status = 'pending'
-      returning *
-    `);
-    const verified = updated.rows[0] ?? payment;
+    const updated = await tx
+      .update(payments)
+      .set({
+        status: "verified",
+        providerTransactionId: input.providerTransactionId,
+        paymentMethodSummary: input.paymentMethod,
+        paidAt: input.paidAt,
+        verifiedAt: sql`now()`,
+        receiptNumber,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(payments.id, payment.id), eq(payments.status, "pending")))
+      .returning();
+    const verified = updated[0] ?? payment;
     await tx.execute(sql`
       update public.subscriptions
          set plan_key = ${canonicalPlanKey(verified.planKey)}, requested_plan_key = null,
@@ -225,30 +236,39 @@ export async function convergePaystackWebhook(input: {
   paymentMethod: string | null;
 }): Promise<PaymentRow | null> {
   return db.transaction(async (tx) => {
-    const locked = await tx.execute<PaymentRow>(sql`
-      select * from public.payments
-       where provider = 'paystack'
-         and provider_reference = ${input.reference}
-         and status = 'pending'
-       for update
-    `);
-    const payment = locked.rows[0];
+    const locked = await tx
+      .select()
+      .from(payments)
+      .where(and(
+        eq(payments.provider, "paystack"),
+        eq(payments.providerReference, input.reference),
+        eq(payments.status, "pending"),
+      ))
+      .limit(1)
+      .for("update");
+    const payment = locked[0];
     if (!payment) return null;
     if (payment.amount !== input.amount || payment.currency.toUpperCase() !== input.currency.toUpperCase()) {
       throw new PaymentVerificationError("Payment amount or currency did not match");
     }
+    await lockProviderTransaction(tx, "paystack", input.providerTransactionId);
     await assertProviderTransactionAvailable(tx, payment.id, input.providerTransactionId);
 
     const receiptNumber = `WF-${payment.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
-    const updated = await tx.execute<PaymentRow>(sql`
-      update public.payments
-         set status = 'verified', provider_transaction_id = ${input.providerTransactionId},
-             payment_method_summary = ${input.paymentMethod}, paid_at = ${input.paidAt},
-             verified_at = now(), receipt_number = ${receiptNumber}, updated_at = now()
-       where id = ${payment.id}::uuid and status = 'pending'
-      returning *
-    `);
-    const verified = updated.rows[0] ?? payment;
+    const updated = await tx
+      .update(payments)
+      .set({
+        status: "verified",
+        providerTransactionId: input.providerTransactionId,
+        paymentMethodSummary: input.paymentMethod,
+        paidAt: input.paidAt,
+        verifiedAt: sql`now()`,
+        receiptNumber,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(payments.id, payment.id), eq(payments.status, "pending")))
+      .returning();
+    const verified = updated[0] ?? payment;
     await tx.execute(sql`
       update public.subscriptions
          set plan_key = ${canonicalPlanKey(verified.planKey)}, requested_plan_key = null,
@@ -263,6 +283,19 @@ export async function convergePaystackWebhook(input: {
     `);
     return verified;
   });
+}
+
+async function lockProviderTransaction(
+  tx: TenantTx,
+  provider: string,
+  providerTransactionId: string,
+): Promise<void> {
+  // The lock key includes both values so different providers cannot contend on
+  // an otherwise identical transaction identifier. It is released on commit
+  // or rollback with the surrounding payment transaction.
+  await tx.execute(sql`
+    select pg_advisory_xact_lock(hashtext(${`${provider}:${providerTransactionId}`}))
+  `);
 }
 
 async function assertProviderTransactionAvailable(
