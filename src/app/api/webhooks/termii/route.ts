@@ -7,6 +7,8 @@ import {
   recordWebhookEvent,
   verifySharedSecret,
 } from "@/lib/webhooks";
+import { safeErrorDiagnostic } from "@/lib/diagnostics";
+import { readWebhookBody, WebhookBodyTooLargeError } from "@/lib/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,8 +36,12 @@ export async function POST(request: Request) {
     reason?: string;
   } = {};
   try {
-    body = await request.json();
-  } catch {
+    const rawBody = await readWebhookBody(request);
+    body = JSON.parse(rawBody) as typeof body;
+  } catch (error) {
+    if (error instanceof WebhookBodyTooLargeError) {
+      return new Response(JSON.stringify({ error: "payload too large" }), { status: 413, headers: JSON_HEADERS });
+    }
     return new Response(JSON.stringify({ error: "invalid json" }), {
       status: 400,
       headers: JSON_HEADERS,
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
     });
   }
 
-  if (recorded.duplicate) {
+  if (recorded.duplicate && !recorded.retryable) {
     return new Response(JSON.stringify({ ok: true, duplicate: true }), { headers: JSON_HEADERS });
   }
 
@@ -75,7 +81,8 @@ export async function POST(request: Request) {
       await tx.execute(sql`set local role workflow_worker`);
       const res = await tx.execute<{ id: string; org_id: string }>(sql`
         select id, org_id from public.messages
-         where provider_message_id = ${eventId}
+         where provider = 'termii'
+           and provider_message_id = ${eventId}
          limit 1
       `);
       return res.rows[0] ?? null;
@@ -111,11 +118,7 @@ export async function POST(request: Request) {
     await markWebhookProcessed(recorded.id!, "processed");
     return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
   } catch (err) {
-    await markWebhookProcessed(
-      recorded.id!,
-      "failed",
-      err instanceof Error ? err.message : "processing_error",
-    );
+    await markWebhookProcessed(recorded.id!, "failed", safeErrorDiagnostic(err).safeMessage);
     return new Response(JSON.stringify({ error: "processing failed" }), {
       status: 500,
       headers: JSON_HEADERS,

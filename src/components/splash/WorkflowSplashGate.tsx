@@ -5,8 +5,9 @@ import { WorkflowSplash, type WorkflowSplashProps } from "./WorkflowSplash";
 
 export const WORKFLOW_SPLASH_SEEN_KEY = "workflow:splash-seen";
 const WORKFLOW_SPLASH_SEEN_VALUE = "v1";
-// TIMING.end is 5.15s; 3x plus the 0.35s exit fade keeps return visits near 2s.
-const RETURN_VISIT_PLAYBACK_SPEED = 3;
+// TIMING.end is 5.15s; 2.5x plus the 0.35s exit fade keeps reloads near 2.4s.
+// The root layout owns this gate, so client-side navigation does not remount it.
+const RETURN_VISIT_PLAYBACK_SPEED = 2.5;
 
 type SplashVisitMode = "first" | "return";
 

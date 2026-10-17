@@ -3,8 +3,10 @@ export function normalizeGoogleQuestionText(rawText, index, requiredText = rawTe
   const raw = String(rawText ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
   const requiredSource = String(requiredText ?? raw).replace(/\s+/g, " ").trim().slice(0, 160);
   const label = raw
-    .replace(/\bYour answer\b/gi, " ")
-    .replace(/\s*\*\s*/g, " ")
+    // Remove only Google's exact trailing answer affordance. Legitimate
+    // question titles containing lowercase "your answer" remain unchanged.
+    .replace(/\s*\*?\s*Your answer\s*$/, "")
+    .replace(/\s*\*\s*$/, "")
     .replace(/\s+/g, " ")
     .trim();
   return { label: label.slice(0, 80) || `Question ${index + 1}`, required: /\*/.test(requiredSource) };

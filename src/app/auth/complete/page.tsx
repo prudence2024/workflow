@@ -6,14 +6,36 @@ import { AuthShell } from "@/components/auth/AuthShell";
 export const dynamic = "force-dynamic";
 
 function safeInternalNext(value: string | undefined): string {
-  if (!value) return "/onboarding";
+  if (!value) return "/dashboard";
   try {
     const decoded = decodeURIComponent(value);
-    if (decoded.startsWith("/") && !decoded.startsWith("//")) return decoded;
+    const url = new URL(decoded, "https://workflow.invalid");
+    const protectedPrefixes = [
+      "/dashboard",
+      "/billing",
+      "/campaigns",
+      "/communications",
+      "/contacts",
+      "/form-operations",
+      "/imports",
+      "/onboarding",
+      "/operations",
+      "/profile-completion",
+      "/reports",
+      "/settings",
+      "/teams",
+      "/templates",
+    ];
+    const isProtected = protectedPrefixes.some(
+      (prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`),
+    );
+    if (url.origin === "https://workflow.invalid" && isProtected && decoded.startsWith("/") && !decoded.startsWith("//")) {
+      return decoded;
+    }
   } catch {
-    // Fall through to the onboarding default.
+    // Fall through to the safe dashboard default.
   }
-  return "/onboarding";
+  return "/dashboard";
 }
 
 export default async function AuthCompletePage({

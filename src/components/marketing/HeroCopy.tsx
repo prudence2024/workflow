@@ -16,9 +16,12 @@ export function HeroCopy() {
   const activeRef = useRef(active);
   const lengthRef = useRef(length);
   const deletingRef = useRef(deleting);
-  activeRef.current = active;
-  lengthRef.current = length;
-  deletingRef.current = deleting;
+
+  useEffect(() => {
+    activeRef.current = active;
+    lengthRef.current = length;
+    deletingRef.current = deleting;
+  }, [active, deleting, length]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");

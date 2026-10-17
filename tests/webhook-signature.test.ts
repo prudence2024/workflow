@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   constantTimeEqual,
+  verifyPaystackSignature,
   verifyResendSignature,
+  isRetryableWebhookStatus,
   verifySharedSecret,
   verifyTelegramSecret,
 } from "../src/lib/webhooks";
@@ -99,5 +101,32 @@ describe("shared secret comparison", () => {
     expect(verifySharedSecret("x", "")).toBe(false);
     expect(verifySharedSecret(null, "x")).toBe(false);
     expect(verifySharedSecret("x", "x")).toBe(true);
+  });
+});
+
+describe("Paystack webhook signature", () => {
+  it("accepts the HMAC-SHA512 signature for the exact raw body", () => {
+    const body = JSON.stringify({ event: "charge.success", data: { id: 42 } });
+    const secret = "paystack-test-secret";
+    const signature = crypto.createHmac("sha512", secret).update(body).digest("hex");
+    expect(verifyPaystackSignature(body, signature, secret)).toBe(true);
+  });
+
+  it("rejects tampered bodies, missing secrets and malformed signatures", () => {
+    const body = JSON.stringify({ event: "charge.success" });
+    const secret = "paystack-test-secret";
+    const signature = crypto.createHmac("sha512", secret).update(body).digest("hex");
+    expect(verifyPaystackSignature(`${body} `, signature, secret)).toBe(false);
+    expect(verifyPaystackSignature(body, signature, undefined)).toBe(false);
+    expect(verifyPaystackSignature(body, "not-a-signature", secret)).toBe(false);
+  });
+});
+
+describe("webhook retry state", () => {
+  it("reprocesses failed deliveries but treats processed and ignored as terminal", () => {
+    expect(isRetryableWebhookStatus("failed")).toBe(true);
+    expect(isRetryableWebhookStatus("processed")).toBe(false);
+    expect(isRetryableWebhookStatus("ignored")).toBe(false);
+    expect(isRetryableWebhookStatus("received")).toBe(false);
   });
 });

@@ -29,7 +29,7 @@ export function Topbar({
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <span className="hidden sm:inline-flex"><ThemeToggle compact /></span>
+        <span className="inline-flex"><ThemeToggle compact /></span>
         <span className="hidden text-[12.5px] text-[var(--color-muted)] sm:inline">{canonicalPlanKey(currentOrg.planKey).toUpperCase()} plan</span>
         <UserMenu name={user.name} email={user.email} />
       </div>

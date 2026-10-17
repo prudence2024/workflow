@@ -10,13 +10,14 @@ describe("final onboarding UX boundaries", () => {
     const planCard = readFileSync("src/components/pricing/PlanCard.tsx", "utf8");
     const onboarding = readFileSync("src/app/onboarding/page.tsx", "utf8");
     expect(planCard).toContain("whitespace-nowrap");
+    expect(planCard).toContain("shrink-0 whitespace-nowrap font-display");
     expect(onboarding).toContain("xl:grid-cols-3");
   });
 
   it("keeps plan prices inside narrow desktop and tablet cards", () => {
     const planCard = readFileSync("src/components/pricing/PlanCard.tsx", "utf8");
-    expect(planCard).toContain("flex-wrap");
-    expect(planCard).toContain("max-w-full");
+    expect(planCard).not.toContain("break-words");
+    expect(planCard).not.toContain("flex-wrap items-baseline");
   });
 
   it("does not detach the workspace switcher form before its action settles", () => {
@@ -29,10 +30,13 @@ describe("final onboarding UX boundaries", () => {
 
   it("locks campaign mapping and duplicate queueing while work is active", () => {
     const page = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8");
+    const mappingEditor = readFileSync("src/components/campaigns/MappingEditor.tsx", "utf8");
     const actions = readFileSync("src/app/(app)/campaigns/actions.ts", "utf8");
-    expect(page).toContain("disabled={activeRun}");
+    const campaignRun = readFileSync("src/lib/campaignRun.ts", "utf8");
+    expect(page).toContain("<MappingEditor");
+    expect(mappingEditor).toContain("disabled={active || !dirty}");
     expect(page).toContain('"Running…"');
-    expect(actions).toContain("A campaign run is already active.");
+    expect(campaignRun).toContain("already running. Wait for the current run");
     expect(actions).toContain("Mapping is locked while this run is active.");
   });
 
@@ -69,5 +73,9 @@ describe("final onboarding UX boundaries", () => {
     expect(payments).toContain("input.amount !== NGN_PRICES[input.planKey]");
     expect(payments).toContain('process.env.PAYSTACK_SECRET_KEY');
     expect(payments).toContain("status === \"verified\"");
+    expect(payments).toContain("update public.organizations");
+    expect(payments).toContain("plan_key = ${canonicalPlanKey(verified.planKey)}");
+    expect(payments).toContain("Payment transaction identity was missing");
+    expect(payments).toContain("Payment timestamp was invalid");
   });
 });

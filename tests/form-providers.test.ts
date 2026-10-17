@@ -27,11 +27,21 @@ describe("google question parsing", () => {
     expect(parseGoogleQuestionText(raw, 0)).toEqual({ label, required });
   });
 
-  it("treats questions without an asterisk as optional", () => {
+  it("removes the Google helper text from optional questions", () => {
     expect(parseGoogleQuestionText("Nickname Your answer", 1)).toEqual({
-      label: "Nickname Your answer".slice(0, 80),
+      label: "Nickname",
       required: false,
     });
+  });
+
+  it("normalizes the optional Course question without broad text replacement", () => {
+    expect(parseGoogleQuestionText("Course Your answer", 0)).toEqual({ label: "Course", required: false });
+    expect(parseGoogleQuestionText("CourseYour answer", 0)).toEqual({ label: "Course", required: false });
+    expect(parseGoogleQuestionText("Describe your answer", 0)).toEqual({ label: "Describe your answer", required: false });
+  });
+
+  it("normalizes required Course without losing required state", () => {
+    expect(parseGoogleQuestionText("Course *Your answer", 0)).toEqual({ label: "Course", required: true });
   });
 
   it("falls back to a positional label for empty text", () => {
